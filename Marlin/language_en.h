@@ -246,7 +246,7 @@
     #define MSG_UBL_OUTPUT_MAP_HOST           _UxGT("Output for Host")
   #endif
   #ifndef MSG_UBL_OUTPUT_MAP_EXCEL
-    #define MSG_UBL_OUTPUT_MAP_EXCEL          _UxGT("Output for Excel")
+    #define MSG_UBL_OUTPUT_MAP_EXCEL          _UxGT("Output for CSV")
   #endif
   #ifndef MSG_UBL_INFO_UBL
     #define MSG_UBL_INFO_UBL                  _UxGT("Output UBL Info")
