@@ -1965,7 +1965,7 @@ void kill_screen(const char* lcd_msg) {
      *  Prepare
      * - Unified Bed Leveling
      *   - Activate UBL
-     *   - Deativate UBL
+     *   - Deactivate UBL
      *   - Mesh Storage
      *       Memory Slot:
      *       Load Bed Mesh
@@ -2008,6 +2008,7 @@ void kill_screen(const char* lcd_msg) {
      *       - Grid Mesh Leveling
      *           Side points:
      *           Level Mesh
+     *   - Output UBL Info
      */
 
     void _lcd_ubl_level_bed() {
