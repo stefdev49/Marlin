@@ -1942,7 +1942,7 @@ void kill_screen(const char* lcd_msg) {
       MENU_BACK(MSG_UBL_LEVEL_BED);
       MENU_ITEM_EDIT(int3, MSG_UBL_MAP_TYPE, &map_type, 0, 1);
       if (map_type == 0) MENU_ITEM(function, MSG_UBL_OUTPUT_MAP_HOST, _lcd_ubl_output_map_cmd);
-      if (map_type == 1) MENU_ITEM(function, MSG_UBL_OUTPUT_MAP_EXCEL, _lcd_ubl_output_map_cmd);
+      if (map_type == 1) MENU_ITEM(function, MSG_UBL_OUTPUT_MAP_CSV, _lcd_ubl_output_map_cmd);
       END_MENU();
     }
 
@@ -1972,7 +1972,7 @@ void kill_screen(const char* lcd_msg) {
      *       Save Bed Mesh
      *   - Output Map
      *       Map Type:
-     *       Output Bed Mesh Host / Output Bed Mesh Excel
+     *       Output Bed Mesh Host / Output Bed Mesh CSV
      *   - UBL Tools
      *     - Build Mesh
      *         Build PLA Mesh
