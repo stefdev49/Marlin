@@ -38,6 +38,15 @@ class CardReader {
 public:
   CardReader();
 
+  #if ENABLED(DELTA_EXTRA)
+    bool writePGM(const char *bufPGM);
+    bool stillPluggedIn();
+  #endif
+  #if ENABLED(ONE_BUTTON)
+    int last_autoconsume_idx;
+    bool check_auto_consume();
+  #endif
+
   void initsd();
   void write_command(char *buf);
   //files auto[0-9].g on the sd card are performed in a row
