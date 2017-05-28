@@ -132,3 +132,12 @@ Marlin/.vs/
 #cmake
 CMakeLists.txt
 Marlin/CMakeLists.txt
+.pioenvs
+.piolibdeps
+.clang_complete
+.gcc-flags.json
+
+Marlin/.gitignore
+Marlin/.travis.yml
+Marlin/lib/
+
