@@ -1,136 +1,4 @@
-diff Marlin/cardreader.cpp ../DiscoEasy200/cardreader.cpp
-51a52,55
-> 
->   #if ENABLED(ONE_BUTTON)
->   last_autoconsume_idx = -1;
->   #endif
-509a514,546
-> #if ENABLED( DELTA_EXTRA )
-> bool CardReader::writePGM(const char *bufPGM) {
->   char msg[64];
->   strncpy_P(msg, bufPGM, sizeof(msg) - 1);
->   file.writeError = false;
->   file.write( msg );
->   file.write( '\r' );
->   file.write( '\n' );
->   return !file.writeError;
-> }
-> 
-> bool CardReader::stillPluggedIn() {
->   // Jump to end of file, to avoid SdFile 'cluster' block cache
->   // TODO: do it better
->   //       (e.g: when we will be in the last 'cluster' block as sd_curpos)
->   //       (     peek will not fail baecause already in cache)
->   if ( ! file.seekEnd( -1 ) ) {
->     return false;
->   }
-> 
->   if ( file.peek() < 0 ) {
->     return false;
->   }
-> 
->   // Jump back to where we were
->   if ( ! file.seekSet(sdpos) ) {
->     return false;
->   }
-> 
->   return true;
-> }
-> #endif
-> 
-510a548,549
-> 
-> 
-520a560,563
->   #if ENABLED(ONE_BUTTON)
->   if (check_auto_consume()) return;
->   #endif
-> 
-522c565,569
-<   sprintf_P(autoname, PSTR("auto%i.g"), autostart_index);
----
->   #if ENABLED(DISABLE_DAGAUTO_START)
->     sprintf_P(autoname, PSTR("auto%i.g"), autostart_index);
->   #else
->     sprintf_P(autoname, PSTR("dagoma%i.g"), autostart_index);
->   #endif
-532,535c579,586
-<     if (p.name[9] != '~' && strncmp((char*)p.name, autoname, 5) == 0) {
-<       openAndPrintFile(autoname);
-<       found = true;
-<     }
----
->       #if ENABLED(DISABLE_DAGAUTO_START)
->         if (p.name[9] != '~' && strncmp((char*)p.name, autoname, 5) == 0) {
->       #else
->         if (p.name[9] != '~' && strncmp((char*)p.name, autoname, 7) == 0) {
->       #endif
->           openAndPrintFile(autoname);
->           found = true;
->         }
-542a594,634
-> #if ENABLED(ONE_BUTTON)
-> bool CardReader::check_auto_consume() {
->   dir_t p;
-> 
->   root.rewind();
-> 
->   int highestIdx = -1;
->   last_autoconsume_idx = -1;
-> 
->   // Detected scheme : _XY.g
->   // Where X and Y are digits
->   while (root.readDir(p, NULL) > 0) {
->     if (
->       p.name[0] != '_' ||
->       (! isDigit(p.name[1])) ||
->       (! isDigit(p.name[2])) ||
->       p.name[3] != ' ' ||
->       p.name[7] != ' ' ||
->       (p.name[8] != 'g' && p.name[8] != 'G')
->     ) continue;
->     // Convert to int
->     int curIdx = ( p.name[1] - 48 ) * 10 + ( p.name[2] - 48 );
->     if (curIdx > highestIdx) {
->       highestIdx = curIdx;
->     }
->   }
-> 
->   if ( highestIdx == -1 ) {
->     return false;
->   }
-> 
->   char autoname[10];
->   sprintf_P(autoname, PSTR("_%02i.g"), highestIdx);
->   
->   openAndPrintFile( autoname );
->   last_autoconsume_idx = highestIdx;
-> 
->   return true;
-> }
-> #endif
-> 
-612a705,712
->     #if ENABLED(ONE_BUTTON)
->       if (last_autoconsume_idx > -1) {
->         char autoname[10];
->         sprintf_P(autoname, PSTR("_%02i.g"), last_autoconsume_idx);
->         removeFile( autoname );
->         last_autoconsume_idx = -1;
->       }
->     #endif
-diff Marlin/cardreader.h ../DiscoEasy200/cardreader.h
-38a39,42
->   #if ENABLED( DELTA_EXTRA )
->   bool writePGM(const char *bufPGM);
->   bool stillPluggedIn();
->   #endif
-42a47,50
->   #if ENABLED(ONE_BUTTON)
->   int last_autoconsume_idx;
->   bool check_auto_consume();
->   #endif
-Seulement dans ../DiscoEasy200/: .clang_complete
+
 diff Marlin/Conditionals.h ../DiscoEasy200/Conditionals.h
 273c273,275
 <     #define HardwareSerial_h // trick to disable the standard HWserial
@@ -315,7 +183,7 @@ diff Marlin/Configuration.h ../DiscoEasy200/Configuration.h
 < #define DEFAULT_AXIS_STEPS_PER_UNIT   {80,80,4000,500}  // default steps per unit for Ultimaker
 < #define DEFAULT_MAX_FEEDRATE          {300, 300, 5, 25}    // (mm/sec)
 < #define DEFAULT_MAX_ACCELERATION      {3000,3000,100,10000}    // X, Y, Z, E maximum start speed for accelerated moves. E default values are good for Skeinforge 40+, for older versions raise them a lot.
-< 
+<
 < #define DEFAULT_ACCELERATION          3000    // X, Y, Z and E acceleration in mm/s^2 for printing moves
 < #define DEFAULT_RETRACT_ACCELERATION  3000    // E acceleration in mm/s^2 for retracts
 < #define DEFAULT_TRAVEL_ACCELERATION   3000    // X, Y, Z acceleration in mm/s^2 for travel (non printing) moves
@@ -323,7 +191,7 @@ diff Marlin/Configuration.h ../DiscoEasy200/Configuration.h
 > #define DEFAULT_AXIS_STEPS_PER_UNIT {80,80,2560,98}
 > #define DEFAULT_MAX_FEEDRATE {500, 500, 4, 170}
 > #define DEFAULT_MAX_ACCELERATION {9000,3000,100,10000}
-> 
+>
 > #define DEFAULT_ACCELERATION 3000
 > #define DEFAULT_RETRACT_ACCELERATION 3000
 > #define DEFAULT_TRAVEL_ACCELERATION 3000
@@ -402,43 +270,43 @@ diff Marlin/dogm_bitmaps.h ../DiscoEasy200/dogm_bitmaps.h
 <       0x0F, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xF0,
 <       0x01, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0x80 };
 ---
->       0xFF, 0x80, 0x07, 0xF8, 0x00, 0xFE, 0x00, 0x0F, 0xC0, 0x1C, 0x00, 0x70, 0x07, 0x80, 
->       0xFF, 0xF0, 0x0F, 0xF8, 0x03, 0xFF, 0x80, 0x7F, 0xF0, 0x1E, 0x00, 0xF0, 0x07, 0x80, 
->       0xFF, 0xF8, 0x0F, 0xFC, 0x0F, 0xFF, 0x80, 0xFF, 0xFC, 0x1F, 0x01, 0xF0, 0x0F, 0xC0, 
->       0xE0, 0x3C, 0x1F, 0xFC, 0x0F, 0x00, 0x01, 0xE0, 0x1E, 0x1F, 0x03, 0xF0, 0x0F, 0xC0, 
->       0xE0, 0x1E, 0x1F, 0xFE, 0x1E, 0x00, 0x01, 0xC0, 0x0E, 0x1F, 0x87, 0xF0, 0x1C, 0xE0, 
->       0xE0, 0x0E, 0x3F, 0xFE, 0x1C, 0x00, 0x01, 0xC0, 0x0E, 0x1F, 0xCF, 0x70, 0x1C, 0xE0, 
->       0xE0, 0x0E, 0x3F, 0xFF, 0x3C, 0x00, 0x03, 0x80, 0x07, 0x1D, 0xEE, 0x70, 0x38, 0x70, 
->       0xE0, 0x0E, 0x7F, 0xFF, 0x38, 0x0F, 0xF3, 0x80, 0x07, 0x1C, 0xFE, 0x70, 0x38, 0x70, 
->       0xE0, 0x0E, 0x7F, 0x7F, 0xB8, 0x0F, 0xF3, 0x80, 0x07, 0x1C, 0x7C, 0x70, 0x78, 0x38, 
->       0xE0, 0x0E, 0xFF, 0x3F, 0xBC, 0x00, 0x73, 0x80, 0x07, 0x1C, 0x38, 0x70, 0x70, 0x38, 
->       0xE0, 0x0E, 0xFE, 0x3F, 0xDC, 0x00, 0x71, 0xC0, 0x0E, 0x1C, 0x10, 0x70, 0x70, 0x1C, 
->       0xE0, 0x1D, 0xFE, 0x3F, 0xDE, 0x00, 0xE1, 0xE0, 0x1E, 0x1C, 0x00, 0x70, 0xE0, 0x1C, 
->       0xE0, 0x7D, 0xFC, 0x1F, 0xEF, 0x81, 0xE0, 0xF0, 0x3C, 0x1C, 0x00, 0x70, 0xE0, 0x1E, 
->       0xFF, 0xFB, 0xFC, 0x1F, 0xE7, 0xFF, 0xC0, 0x7F, 0xF8, 0x1C, 0x00, 0x71, 0xCF, 0xFE, 
->       0xFF, 0xE3, 0xFC, 0x0F, 0xE3, 0xFF, 0x80, 0x3F, 0xF0, 0x1C, 0x00, 0x71, 0xCF, 0xFF, 
->       0xFC, 0x03, 0xF8, 0x0F, 0xF0, 0x7C, 0x00, 0x07, 0x80, 0x1C, 0x00, 0x71, 0x8F, 0xFF, 
->       0x00, 0x07, 0xF8, 0x07, 0xF0, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 
->       0x00, 0x07, 0xF0, 0x07, 0xF8, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 
->       0x00, 0x0F, 0xF0, 0x03, 0xF8, 0x00, 0x00, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 
->       0x00, 0x0F, 0xE0, 0x03, 0xFC, 0x00, 0x13, 0x80, 0x00, 0x00, 0x00, 0x00, 0x03, 0xFF, 
->       0x00, 0x1F, 0xE0, 0x01, 0xFC, 0x00, 0x06, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01, 0xFF, 
->       0x00, 0x0F, 0xC0, 0x01, 0xFE, 0x00, 0x14, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0xFF, 
->       0x00, 0x0F, 0xC0, 0x00, 0xFE, 0x00, 0x94, 0x00, 0x00, 0x00, 0x00, 0x0C, 0x00, 0x7F, 
->       0x00, 0x07, 0x80, 0x00, 0xFF, 0x01, 0xE4, 0x1E, 0x78, 0x00, 0x00, 0x0C, 0xC0, 0x3F, 
->       0x00, 0x03, 0x80, 0x00, 0x7F, 0x00, 0x04, 0x3F, 0xFC, 0x00, 0x00, 0x0C, 0xC0, 0x1F, 
->       0x00, 0x03, 0x00, 0x00, 0x7F, 0x80, 0xF4, 0x73, 0xCE, 0x08, 0x03, 0x0C, 0x01, 0x8F, 
->       0x00, 0xC1, 0x00, 0x00, 0x3F, 0x81, 0x54, 0x61, 0x86, 0x3E, 0x0F, 0xCC, 0xC7, 0xE7, 
->       0x00, 0xE0, 0x00, 0x00, 0x3F, 0xC0, 0x54, 0x61, 0x86, 0x7F, 0x1F, 0xCC, 0xCF, 0xF3, 
->       0x01, 0xE0, 0x00, 0x00, 0x1F, 0xC0, 0x24, 0x61, 0x86, 0xE3, 0x9C, 0xEC, 0xCE, 0x71, 
->       0x00, 0xF0, 0x00, 0x00, 0x1F, 0xE0, 0x84, 0x61, 0x86, 0xC1, 0x98, 0x6C, 0xCC, 0x31, 
->       0x00, 0x78, 0x00, 0x00, 0x0F, 0xE1, 0x54, 0x61, 0x86, 0xC1, 0x98, 0x0C, 0xCC, 0x31, 
->       0x00, 0x7C, 0x00, 0x00, 0x0F, 0xF1, 0x54, 0x61, 0x86, 0xC1, 0x98, 0x0C, 0xCC, 0x31, 
->       0x00, 0x78, 0x3F, 0xFF, 0xFF, 0xF0, 0xF4, 0x61, 0x86, 0xE1, 0x98, 0x0C, 0xCC, 0x31, 
->       0x00, 0x78, 0x7F, 0xFF, 0xFF, 0xFA, 0x04, 0x61, 0x86, 0x7D, 0xF8, 0x0E, 0xFC, 0x31, 
->       0x00, 0xF0, 0x7F, 0xFF, 0xFF, 0xFA, 0x84, 0x61, 0x86, 0x1D, 0xF8, 0x06, 0xFC, 0x33, 
->       0x00, 0xF0, 0xFF, 0xFF, 0xFF, 0xFD, 0xF6, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x02, 
->       0x01, 0xE0, 0xFF, 0xFF, 0xFF, 0xFC, 0x03, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x0E, 
+>       0xFF, 0x80, 0x07, 0xF8, 0x00, 0xFE, 0x00, 0x0F, 0xC0, 0x1C, 0x00, 0x70, 0x07, 0x80,
+>       0xFF, 0xF0, 0x0F, 0xF8, 0x03, 0xFF, 0x80, 0x7F, 0xF0, 0x1E, 0x00, 0xF0, 0x07, 0x80,
+>       0xFF, 0xF8, 0x0F, 0xFC, 0x0F, 0xFF, 0x80, 0xFF, 0xFC, 0x1F, 0x01, 0xF0, 0x0F, 0xC0,
+>       0xE0, 0x3C, 0x1F, 0xFC, 0x0F, 0x00, 0x01, 0xE0, 0x1E, 0x1F, 0x03, 0xF0, 0x0F, 0xC0,
+>       0xE0, 0x1E, 0x1F, 0xFE, 0x1E, 0x00, 0x01, 0xC0, 0x0E, 0x1F, 0x87, 0xF0, 0x1C, 0xE0,
+>       0xE0, 0x0E, 0x3F, 0xFE, 0x1C, 0x00, 0x01, 0xC0, 0x0E, 0x1F, 0xCF, 0x70, 0x1C, 0xE0,
+>       0xE0, 0x0E, 0x3F, 0xFF, 0x3C, 0x00, 0x03, 0x80, 0x07, 0x1D, 0xEE, 0x70, 0x38, 0x70,
+>       0xE0, 0x0E, 0x7F, 0xFF, 0x38, 0x0F, 0xF3, 0x80, 0x07, 0x1C, 0xFE, 0x70, 0x38, 0x70,
+>       0xE0, 0x0E, 0x7F, 0x7F, 0xB8, 0x0F, 0xF3, 0x80, 0x07, 0x1C, 0x7C, 0x70, 0x78, 0x38,
+>       0xE0, 0x0E, 0xFF, 0x3F, 0xBC, 0x00, 0x73, 0x80, 0x07, 0x1C, 0x38, 0x70, 0x70, 0x38,
+>       0xE0, 0x0E, 0xFE, 0x3F, 0xDC, 0x00, 0x71, 0xC0, 0x0E, 0x1C, 0x10, 0x70, 0x70, 0x1C,
+>       0xE0, 0x1D, 0xFE, 0x3F, 0xDE, 0x00, 0xE1, 0xE0, 0x1E, 0x1C, 0x00, 0x70, 0xE0, 0x1C,
+>       0xE0, 0x7D, 0xFC, 0x1F, 0xEF, 0x81, 0xE0, 0xF0, 0x3C, 0x1C, 0x00, 0x70, 0xE0, 0x1E,
+>       0xFF, 0xFB, 0xFC, 0x1F, 0xE7, 0xFF, 0xC0, 0x7F, 0xF8, 0x1C, 0x00, 0x71, 0xCF, 0xFE,
+>       0xFF, 0xE3, 0xFC, 0x0F, 0xE3, 0xFF, 0x80, 0x3F, 0xF0, 0x1C, 0x00, 0x71, 0xCF, 0xFF,
+>       0xFC, 0x03, 0xF8, 0x0F, 0xF0, 0x7C, 0x00, 0x07, 0x80, 0x1C, 0x00, 0x71, 0x8F, 0xFF,
+>       0x00, 0x07, 0xF8, 0x07, 0xF0, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+>       0x00, 0x07, 0xF0, 0x07, 0xF8, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+>       0x00, 0x0F, 0xF0, 0x03, 0xF8, 0x00, 0x00, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF,
+>       0x00, 0x0F, 0xE0, 0x03, 0xFC, 0x00, 0x13, 0x80, 0x00, 0x00, 0x00, 0x00, 0x03, 0xFF,
+>       0x00, 0x1F, 0xE0, 0x01, 0xFC, 0x00, 0x06, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01, 0xFF,
+>       0x00, 0x0F, 0xC0, 0x01, 0xFE, 0x00, 0x14, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0xFF,
+>       0x00, 0x0F, 0xC0, 0x00, 0xFE, 0x00, 0x94, 0x00, 0x00, 0x00, 0x00, 0x0C, 0x00, 0x7F,
+>       0x00, 0x07, 0x80, 0x00, 0xFF, 0x01, 0xE4, 0x1E, 0x78, 0x00, 0x00, 0x0C, 0xC0, 0x3F,
+>       0x00, 0x03, 0x80, 0x00, 0x7F, 0x00, 0x04, 0x3F, 0xFC, 0x00, 0x00, 0x0C, 0xC0, 0x1F,
+>       0x00, 0x03, 0x00, 0x00, 0x7F, 0x80, 0xF4, 0x73, 0xCE, 0x08, 0x03, 0x0C, 0x01, 0x8F,
+>       0x00, 0xC1, 0x00, 0x00, 0x3F, 0x81, 0x54, 0x61, 0x86, 0x3E, 0x0F, 0xCC, 0xC7, 0xE7,
+>       0x00, 0xE0, 0x00, 0x00, 0x3F, 0xC0, 0x54, 0x61, 0x86, 0x7F, 0x1F, 0xCC, 0xCF, 0xF3,
+>       0x01, 0xE0, 0x00, 0x00, 0x1F, 0xC0, 0x24, 0x61, 0x86, 0xE3, 0x9C, 0xEC, 0xCE, 0x71,
+>       0x00, 0xF0, 0x00, 0x00, 0x1F, 0xE0, 0x84, 0x61, 0x86, 0xC1, 0x98, 0x6C, 0xCC, 0x31,
+>       0x00, 0x78, 0x00, 0x00, 0x0F, 0xE1, 0x54, 0x61, 0x86, 0xC1, 0x98, 0x0C, 0xCC, 0x31,
+>       0x00, 0x7C, 0x00, 0x00, 0x0F, 0xF1, 0x54, 0x61, 0x86, 0xC1, 0x98, 0x0C, 0xCC, 0x31,
+>       0x00, 0x78, 0x3F, 0xFF, 0xFF, 0xF0, 0xF4, 0x61, 0x86, 0xE1, 0x98, 0x0C, 0xCC, 0x31,
+>       0x00, 0x78, 0x7F, 0xFF, 0xFF, 0xFA, 0x04, 0x61, 0x86, 0x7D, 0xF8, 0x0E, 0xFC, 0x31,
+>       0x00, 0xF0, 0x7F, 0xFF, 0xFF, 0xFA, 0x84, 0x61, 0x86, 0x1D, 0xF8, 0x06, 0xFC, 0x33,
+>       0x00, 0xF0, 0xFF, 0xFF, 0xFF, 0xFD, 0xF6, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x02,
+>       0x01, 0xE0, 0xFF, 0xFF, 0xFF, 0xFC, 0x03, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x0E,
 >       0x01, 0xE0, 0xFF, 0xFF, 0xFF, 0xFE, 0x01, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xF8 };
 diff Marlin/dogm_lcd_implementation.h ../DiscoEasy200/dogm_lcd_implementation.h
 53a54
@@ -454,13 +322,13 @@ diff Marlin/dogm_lcd_implementation.h ../DiscoEasy200/dogm_lcd_implementation.h
 <         #ifndef STRING_SPLASH_LINE2
 <           u8g.drawStr(txt1X, u8g.getHeight() - (DOG_CHAR_HEIGHT), STRING_SPLASH_LINE1);
 ---
-> 
+>
 >         #ifdef DOGM_LCD_MODIF_BY_DUMNAC
 >           //Message Bienvenue
 >           u8g.setFont(u8g_font_6x10);
 >           u8g.drawStr(73,10,"MARLIN");
 >           u8g.drawStr(65,19,"v1.1.0 RC6");
-> 
+>
 >           u8g.setFont(u8g_font_5x8);
 >           u8g.drawStr(73,60,"oled by Dum.");
 266,268c272,279
@@ -521,7 +389,7 @@ diff Marlin/Marlin_main.cpp ../DiscoEasy200/Marlin_main.cpp
 > #if ENABLED(USE_SECOND_SERIAL)
 >   #include "HardwareSerial.h"
 > #endif
-> 
+>
 233a238,248
 >  * ************ DAGOMA.FR Specific - This can change to suit future G-code regulations
 >  * M700 - Wifi : Set SSID to use.
@@ -531,21 +399,21 @@ diff Marlin/Marlin_main.cpp ../DiscoEasy200/Marlin_main.cpp
 >  * M711 - Wifi : Set API Url to use.
 >  * M712 - Wifi : Set API Key to use.
 >  * M720 - Wifi : Echo the string in serial .
-> 
+>
 >  * ************ DAGOMA.FR End ***************
 >  *
 245a261
-> 
+>
 328a345,348
 > #if ENABLED(IS_MONO_FAN) || ENABLED(PRINTER_HEAD_EASY)
 > static millis_t next_fan_auto_regulation_check = 0;
 > #endif
-> 
+>
 404a425,426
 >   #define SIN_30 COS_60
 >   #define COS_30 SIN_60
 426a449,457
-> 
+>
 >   #if ENABLED( DELTA_EXTRA )
 >     bool postcompute_tri_ready = false;
 >     bool startup_auto_calibration = false;
@@ -581,7 +449,7 @@ diff Marlin/Marlin_main.cpp ../DiscoEasy200/Marlin_main.cpp
 >   }
 >   return true;
 > }
-> 
+>
 > /**
 >  * Wait for all enqueued commands to be processed.
 >  */
@@ -590,29 +458,29 @@ diff Marlin/Marlin_main.cpp ../DiscoEasy200/Marlin_main.cpp
 >     idle();
 >   }
 > }
-> 
+>
 > /**
 737a805,814
 > #if ENABLED( ONE_LED )
 >   inline void one_led_on() {
 >     digitalWrite( ONE_LED_PIN, true ^ ONE_LED_INVERTING );
 >   }
-> 
+>
 >   inline void one_led_off() {
 >     digitalWrite( ONE_LED_PIN, false ^ ONE_LED_INVERTING );
 >   }
 > #endif
-> 
+>
 857a935,984
-> 
+>
 >   #if ENABLED(USE_SECOND_SERIAL)
 >     SECOND_SERIAL.begin( SECOND_SERIAL_BAUDRATE );
 >   #endif
-> 
+>
 >   #if ENABLED(SUMMON_PRINT_PAUSE) && SUMMON_PRINT_PAUSE_PIN != X_MIN_PIN && SUMMON_PRINT_PAUSE_PIN != Y_MAX_PIN && SUMMON_PRINT_PAUSE_PIN != Z_MIN_PIN
 >     SET_INPUT(SUMMON_PRINT_PAUSE_PIN);
 >     WRITE(SUMMON_PRINT_PAUSE_PIN, HIGH);
-> 
+>
 >     #if ENABLED(FILAMENT_RUNOUT_SENSOR)
 >       delay( 100 );
 >       if ( READ( SUMMON_PRINT_PAUSE_PIN ) ^ SUMMON_PRINT_PAUSE_INVERTING ) {
@@ -624,12 +492,12 @@ diff Marlin/Marlin_main.cpp ../DiscoEasy200/Marlin_main.cpp
 >     SET_INPUT(ONE_BUTTON_PIN);
 >     WRITE(ONE_BUTTON_PIN, HIGH);
 >   #endif
-> 
+>
 >   #if ENABLED(PRINTER_HEAD_EASY)
 >     SET_OUTPUT(PRINTER_HEAD_EASY_CONSTANT_FAN_PIN);
 >     WRITE(PRINTER_HEAD_EASY_CONSTANT_FAN_PIN, LOW);
 >   #endif
-> 
+>
 >   #if ENABLED( DELTA_EXTRA )
 >     #if ENABLED( ONE_BUTTON )
 >       // Read the button state here
@@ -648,22 +516,22 @@ diff Marlin/Marlin_main.cpp ../DiscoEasy200/Marlin_main.cpp
 >       }
 >     #endif
 >   #endif
-> 
+>
 >   #if ENABLED( ONE_LED )
 >     pinMode( ONE_LED_PIN, OUTPUT );
 >     one_led_off();
 >   #endif
-> 
+>
 859a987,1036
 > #if ENABLED(WIFI_PRINT)
 >   unsigned long last_status_timestamp = 0;
 >   void manage_second_serial_status() {
 >     if ( millis() - last_status_timestamp > 10000 ) {
 >       SECOND_SERIAL.print( "STAT:" );
-> 
+>
 >       SECOND_SERIAL.print( "tstp:" );
 >       SECOND_SERIAL.print(  millis()  );
-> 
+>
 >       SECOND_SERIAL.print( " X:" );
 >       SECOND_SERIAL.print( current_position[X_AXIS] );
 >       SECOND_SERIAL.print( " Y:" );
@@ -672,7 +540,7 @@ diff Marlin/Marlin_main.cpp ../DiscoEasy200/Marlin_main.cpp
 >       SECOND_SERIAL.print( current_position[Z_AXIS] );
 >       SECOND_SERIAL.print( " E:" );
 >       SECOND_SERIAL.print( current_position[E_AXIS] );
-> 
+>
 >       #if HAS_TEMP_HOTEND
 >         SECOND_SERIAL.print( " TC:" );
 >         SECOND_SERIAL.print( degHotend(target_extruder), 1 );
@@ -685,41 +553,41 @@ diff Marlin/Marlin_main.cpp ../DiscoEasy200/Marlin_main.cpp
 >         SECOND_SERIAL.print( " BT:" );
 >         SECOND_SERIAL.print( degTargetBed(), 1 );
 >       #endif
-> 
+>
 >       #if ENABLED(SDSUPPORT)
 >         SECOND_SERIAL.print( " SD_OK:" );
 >         SECOND_SERIAL.print( card.cardOK );
-> 
+>
 >         SECOND_SERIAL.print( " SD_PRINTING:" );
 >         SECOND_SERIAL.print( card.sdprinting );
-> 
+>
 >         SECOND_SERIAL.print( " SD_PROGRESS:" );
 >         SECOND_SERIAL.print( card.percentDone() );
 >       #endif
-> 
+>
 >       SECOND_SERIAL.println();
-> 
+>
 >       last_status_timestamp = millis();
 >     }
 >   }
-> 
+>
 > #endif // END WIFI_PRINT
-> 
+>
 870a1048,1052
-> 
+>
 >   #if ENABLED( WIFI_PRINT )
 >     manage_second_serial_status();
 >   #endif
-> 
+>
 873c1055
 <   #if ENABLED(SDSUPPORT)
 ---
 >   #if ENABLED(SDSUPPORT) && DISABLED(ONE_BUTTON)
 940a1123,1136
 >   #if ENABLED( WIFI_PRINT )
-> 
+>
 >     while (commands_in_queue < BUFSIZE && (MYSERIAL.available() > 0 || SECOND_SERIAL.available() > 0 )) {
-> 
+>
 >     char serial_char;
 >     if ( SECOND_SERIAL.available() > 0 ) {
 >       serial_char = SECOND_SERIAL.read();
@@ -727,12 +595,12 @@ diff Marlin/Marlin_main.cpp ../DiscoEasy200/Marlin_main.cpp
 >     else {
 >       serial_char = MYSERIAL.read();
 >     }
-> 
+>
 >   #else // ELSE WIFI_PRINT
-> 
+>
 944a1141,1142
 >   #endif // END WIFI_PRINT
-> 
+>
 962a1161,1168
 >       #if ENABLED( WIFI_PRINT )
 >         if ( strncmp( command, "REDY:", 4 ) == 0 ) {
@@ -741,33 +609,33 @@ diff Marlin/Marlin_main.cpp ../DiscoEasy200/Marlin_main.cpp
 >           continue;
 >         }
 >       #endif // END WIFI_PRINT
-> 
+>
 975a1182,1186
-> 
+>
 >           #if ENABLED( WIFI_PRINT )
 >             SECOND_SERIAL.println( 'K' );
 >           #endif
-> 
+>
 984a1196,1200
-> 
+>
 >             #if ENABLED( WIFI_PRINT )
 >               SECOND_SERIAL.println( 'K' );
 >             #endif
-> 
+>
 990a1207,1211
-> 
+>
 >           #if ENABLED( WIFI_PRINT )
 >             SECOND_SERIAL.println( 'K' );
 >           #endif
-> 
+>
 998a1220,1224
-> 
+>
 >         #if ENABLED( WIFI_PRINT )
 >           SECOND_SERIAL.println( 'K' );
 >         #endif
-> 
+>
 1027a1254,1257
-> 
+>
 >       #if ENABLED( WIFI_PRINT )
 >         SECOND_SERIAL.println( 'O' );
 >       #endif
@@ -792,32 +660,32 @@ diff Marlin/Marlin_main.cpp ../DiscoEasy200/Marlin_main.cpp
 >              || sd_char == ':'
 >              #endif
 >              ) && !sd_comment_mode)
-> 
+>
 1075a1322,1332
 >         if (sd_char == '#') stop_buffering = true;
-> 
+>
 >         sd_comment_mode = false; //for new command
-> 
+>
 >         if (sd_count) {
 >           command_queue[cmd_queue_index_w][sd_count] = '\0'; //terminate string
 >           sd_count = 0; //clear buffer
-> 
+>
 >           _commit_command(false);
 >         }
-> 
+>
 1086a1344
 >           #if DISABLED(ONE_BUTTON)
 1087a1346
 >           #endif
 1089,1091d1347
 <         if (sd_char == '#') stop_buffering = true;
-< 
+<
 <         sd_comment_mode = false; //for new command
 1094,1098d1349
-< 
+<
 <         command_queue[cmd_queue_index_w][sd_count] = '\0'; //terminate string
 <         sd_count = 0; //clear buffer
-< 
+<
 <         _commit_command(false);
 1537c1788,1818
 <   static void run_z_probe() {
@@ -851,7 +719,7 @@ diff Marlin/Marlin_main.cpp ../DiscoEasy200/Marlin_main.cpp
 >       }
 >     }
 >   #endif
-> 
+>
 >   static void run_z_probe(bool fast=false) {
 1555,1556c1836,1846
 <       feedrate = homing_feedrate[Z_AXIS] / 4;
@@ -890,7 +758,7 @@ diff Marlin/Marlin_main.cpp ../DiscoEasy200/Marlin_main.cpp
 >       #endif
 3075a3381,3859
 >   #if ENABLED( DELTA_EXTRA )
-> 
+>
 >     #define PROBE_POINT_NUMBER 19 // 12 outer, 6 inner, 1 center
 >     // Numbered from X tower cardinal axis,
 >     // from outside to center
@@ -996,7 +864,7 @@ diff Marlin/Marlin_main.cpp ../DiscoEasy200/Marlin_main.cpp
 >         0.0
 >       }
 >     };
-> 
+>
 >     // As probe_plan above,
 >     // numbered from X tower cardinal axis
 >     // From outside to center
@@ -1030,39 +898,39 @@ diff Marlin/Marlin_main.cpp ../DiscoEasy200/Marlin_main.cpp
 >       { 16, 17, 18 },
 >       { 17, 12, 18 }
 >     };
-> 
+>
 >     // Predefine used functions
 >     inline void gcode_M500();
 >     inline void gcode_M665();
 >     inline void gcode_G30(bool fast=false);
-> 
+>
 >     #define Z_AVG_TOLERANCE 0.02
-> 
+>
 >     inline float get_probed_Z_avg(bool fast=false) {
-> 
+>
 >       bool all_points_are_good = false;
 >       float z_read[3] = { 50.0 };
 >       float z_avg = 0.0;
-> 
+>
 >       do {
 >         gcode_G30(fast);
-> 
+>
 >         z_read[2] = z_read[1];
 >         z_read[1] = z_read[0];
 >         z_read[0] = current_position[Z_AXIS];
-> 
+>
 >         if (fast) {
 >           z_avg = ( z_read[0] + z_read[1] ) / 2.0;
 >         }
 >         else {
 >           z_avg = ( z_read[0] + z_read[1] + z_read[2] ) / 3.0;
 >         }
-> 
+>
 >         set_destination_to_current();
 >         destination[ Z_AXIS ] = min( 50.0, destination[ Z_AXIS ] + 5.0 );
 >         prepare_move();
 >         st_synchronize();
-> 
+>
 >         if ( destination[ Z_AXIS ] > 49.90 ) {
 >           int i=10; do { idle(true); delay(100); } while(--i);
 >           all_points_are_good = false;
@@ -1074,13 +942,13 @@ diff Marlin/Marlin_main.cpp ../DiscoEasy200/Marlin_main.cpp
 >             abs(z_read[1] - z_avg) < Z_AVG_TOLERANCE &&
 >             abs(z_read[2] - z_avg) < Z_AVG_TOLERANCE;
 >         }
-> 
+>
 >       } while( !all_points_are_good );
-> 
-> 
+>
+>
 >       return z_avg;
 >     }
-> 
+>
 >     /**
 >      *           T3
 >      *           |
@@ -1094,26 +962,26 @@ diff Marlin/Marlin_main.cpp ../DiscoEasy200/Marlin_main.cpp
 >      *
 >      *  T1       XY        T2
 >      */
-> 
+>
 >     float triangle_sign(const float x, const float y, const short p1, const short p2) {
->       return 
+>       return
 >         (x - probe_plan[p2][0]) * (probe_plan[p1][1] - probe_plan[p2][1]) -
 >         (probe_plan[p1][0] - probe_plan[p2][0]) * (y - probe_plan[p2][1]);
 >     }
-> 
+>
 >     bool triangle_contains(const float x, const float y, const short t) {
 >       bool b1, b2, b3;
-> 
+>
 >       const short *triangle;
 >       triangle = probe_plan_mesh[t];
-> 
+>
 >       b1 = triangle_sign(x, y, triangle[0], triangle[1]) <= 0.0;
 >       b2 = triangle_sign(x, y, triangle[1], triangle[2]) <= 0.0;
 >       b3 = triangle_sign(x, y, triangle[2], triangle[0]) <= 0.0;
-> 
+>
 >       return ((b1 == b2) && (b2 == b3));
 >     }
-> 
+>
 >     #define PROBE_REGION_NUMBER 12
 >     const short probe_plan_triangle_mesh_region[PROBE_REGION_NUMBER][4] = {
 >       { 18, 12, 0 },
@@ -1129,31 +997,31 @@ diff Marlin/Marlin_main.cpp ../DiscoEasy200/Marlin_main.cpp
 >       { 23, 17, 10 },
 >       { 23, 17, 11 }
 >     };
-> 
+>
 >     // TODO: Move it to the right place
 >     // WHERE: on calculate_delta parameters ?
 >     // 'CAUSE: these values are fixed against delta R
 >     float precalc_probe_plan_region_aref[8] = { 0.0 };
-> 
+>
 >     inline short triangle_index_in_region( const float x, const float y, const short r ) {
 >       const short *region;
 >       region = probe_plan_triangle_mesh_region[r];
-> 
+>
 >       if ( triangle_contains(x, y, region[0]) ) return region[0];
 >       if ( triangle_contains(x, y, region[1]) ) return region[1];
-> 
+>
 >       return region[2];
 >     };
-> 
+>
 >     inline short region_index( const float x, const float y ) {
-> 
+>
 >       // While all tri equations are just: y = a.x;
 >       float aTested = y / x;
-> 
+>
 >       // Simple test to choice between 2 region groups: 2,3,4,5,6,7 or 8,9,10,11,0,1
 >       if ( x >= 0.0 ) {
 >         // Region is one of 2,3,4,5,6,7
->  
+>
 >         // Simple test to choice between 2 sub region groups: 5,6,7 or 2,3,4
 >         if (y >= 0.0 ) {
 >           // Region is one of 5,6,7
@@ -1188,7 +1056,7 @@ diff Marlin/Marlin_main.cpp ../DiscoEasy200/Marlin_main.cpp
 >       }
 >       else {
 >         // Region is one of 8,9,10,11,0,1
->  
+>
 >         // Simple test to choice between 2 sub region groups: 8,9,10 or 11,0,1
 >         if (y >= 0.0 ) {
 >           // Region is one of 8,9,10
@@ -1221,25 +1089,25 @@ diff Marlin/Marlin_main.cpp ../DiscoEasy200/Marlin_main.cpp
 >           }
 >         }
 >       }
-> 
+>
 >       // At this point, it's an error
 >       // but do not mess up print with 'index out of bound'
 >       return 0;
 >     }
-> 
+>
 >     inline short triangle_index( const float x, const float y ) {
 >       short r = region_index( x, y );
 >       return triangle_index_in_region( x, y, r );
 >     }
-> 
+>
 >     float probed_tri_postcompute_a[PROBE_MESH_NUMBER] = { 0.0 };
 >     float probed_tri_postcompute_b[PROBE_MESH_NUMBER] = { 0.0 };
 >     float probed_tri_postcompute_c[PROBE_MESH_NUMBER] = { 0.0 };
 >     float probed_tri_postcompute_d[PROBE_MESH_NUMBER] = { 0.0 };
-> 
+>
 >     inline void probing_postcompute_tri_parameters() {
-> 
-> 
+>
+>
 >       // Plane equation: a.x+b.y+c.z+d = 0
 >       // Query to find z for given x,y will be
 >       // z = (-d - b.y - a.x ) / c;
@@ -1250,23 +1118,23 @@ diff Marlin/Marlin_main.cpp ../DiscoEasy200/Marlin_main.cpp
 >       //   L = d/c
 >       //   M = b/c
 >       //   N = a/c
-> 
-> 
+>
+>
 >       //   C
 >       //   ^
 >       // AC|
 >       //   |
 >       //   A ----> B
 >       //      AB
-> 
+>
 >       float *A;
 >       float *B;
 >       float *C;
-> 
+>
 >       #define X 0
 >       #define Y 1
 >       #define Z 2
-> 
+>
 >       int i;
 >       for(i=0; i < PROBE_MESH_NUMBER; i++) {
 >         A = probe_plan[probe_plan_mesh[i][0]];
@@ -1276,24 +1144,24 @@ diff Marlin/Marlin_main.cpp ../DiscoEasy200/Marlin_main.cpp
 >         float b = ( B[Z]-A[Z] )*( C[X]-A[X] ) - ( C[Z]-A[Z] )*( B[X]-A[X] );
 >         float c = ( B[X]-A[X] )*( C[Y]-A[Y] ) - ( C[X]-A[X] )*( B[Y]-A[Y] );
 >         float d = -(a*A[X]+b*A[Y]+c*A[Z]);
-> 
+>
 >         float l = d/c;
 >         float m = b/c;
 >         float n = a/c;
-> 
+>
 >         probed_tri_postcompute_a[i] = a;
 >         probed_tri_postcompute_b[i] = b;
 >         probed_tri_postcompute_c[i] = c;
 >         probed_tri_postcompute_d[i] = d;
-> 
+>
 >       }
-> 
+>
 >       // For memory:
 >       // precalc_probed_tri_aref[ 0 ] = delta_tower2_y / delta_tower2_x;
 >       // precalc_probed_tri_aref[ 1 ] = probe_point_YZ_y / probe_point_YZ_x;
 >       // precalc_probed_tri_aref[ 2 ] = delta_tower1_y / delta_tower1_x;
 >       // precalc_probed_tri_aref[ 3 ] = probe_point_ZX_y / probe_point_ZX_x;
-> 
+>
 >       precalc_probe_plan_region_aref[ 0 ] = probe_plan[ 0][1] / probe_plan[ 0][0];
 >       precalc_probe_plan_region_aref[ 1 ] = probe_plan[ 1][1] / probe_plan[ 1][0];
 >       precalc_probe_plan_region_aref[ 2 ] = probe_plan[ 3][1] / probe_plan[ 3][0];
@@ -1302,24 +1170,24 @@ diff Marlin/Marlin_main.cpp ../DiscoEasy200/Marlin_main.cpp
 >       precalc_probe_plan_region_aref[ 5 ] = probe_plan[ 7][1] / probe_plan[ 7][0];
 >       precalc_probe_plan_region_aref[ 6 ] = probe_plan[ 9][1] / probe_plan[ 9][0];
 >       precalc_probe_plan_region_aref[ 7 ] = probe_plan[10][1] / probe_plan[10][0];
-> 
+>
 >       postcompute_tri_ready = true;
 >     }
-> 
+>
 >     inline void gcode_G29() {
-> 
+>
 >       postcompute_tri_ready = false;
-> 
+>
 >       gcode_G28();
-> 
+>
 >       feedrate = homing_feedrate[ X_AXIS ];
-> 
+>
 >       int i;
 >       // Reset
 >       for(i=0; i<PROBE_POINT_NUMBER; i++) {
 >         probe_plan[i][2] = 42.0;
 >       }
-> 
+>
 >       // Probing
 >       for(i=0; i<PROBE_POINT_NUMBER; i++) {
 >         destination[ X_AXIS ] = probe_plan[i][0];
@@ -1329,7 +1197,7 @@ diff Marlin/Marlin_main.cpp ../DiscoEasy200/Marlin_main.cpp
 >         st_synchronize();
 >         probe_plan[i][2] = get_probed_Z_avg();
 >       }
-> 
+>
 >       #if ENABLED(DEBUG_LEVELING_FEATURE)
 >         if (DEBUGGING(LEVELING)) {
 >           SERIAL_ECHOLNPGM("Probed tri altitude:");
@@ -1342,15 +1210,15 @@ diff Marlin/Marlin_main.cpp ../DiscoEasy200/Marlin_main.cpp
 >           }
 >         }
 >       #endif
-> 
+>
 >       z_smooth_tri_leveling_height = 20.0;
-> 
+>
 >       probing_postcompute_tri_parameters();
-> 
-> 
+>
+>
 >       //#define TEST_SPECIAL_PROBE
 >       #ifdef TEST_SPECIAL_PROBE
-> 
+>
 >         for( float y=-100.0; y < 100.0; y+= 10.0 ) {
 >           for( float x=-100.0; x < 100.0; x+= 10.0 ) {
 >             SERIAL_ECHO( "  @X:" );
@@ -1361,20 +1229,20 @@ diff Marlin/Marlin_main.cpp ../DiscoEasy200/Marlin_main.cpp
 >             SERIAL_ECHOLN( triangle_index( x, y ) );
 >           }
 >         }
-> 
+>
 >       #endif
-> 
+>
 >     }
-> 
+>
 >   #else // ELSE: !DELTA_EXTRA
-> 
+>
 3237a4022,4024
 >     #if ENABLED(EMERGENCY_STOP)
 >       handle_emergency_stop();
 >     #endif
 3601a4389,4390
 >   #endif // END !DELTA_EXTRA
-> 
+>
 3606a4396,4398
 >     #if ENABLED(DELTA_EXTRA)
 >     inline void gcode_G30(bool fast/*default is declared above*/) {
@@ -1390,14 +1258,14 @@ diff Marlin/Marlin_main.cpp ../DiscoEasy200/Marlin_main.cpp
 >         run_z_probe();
 >       #endif
 3627a4425
-> 
+>
 3630a4429,4431
 >         #if ENABLED(Z_DUAL_ENDSTOPS)
 >           z_probed_value_before_z_raise = current_position[Z_AXIS];
 >         #endif
 5994a6796,6797
-> 
-> 
+>
+>
 5996a6800,6891
 >   // Generally :
 >   //   homing_feedrate is expressed in mm/min
@@ -1414,11 +1282,11 @@ diff Marlin/Marlin_main.cpp ../DiscoEasy200/Marlin_main.cpp
 >     // The following plan method use feedrate expressed in mm/min
 >     #define RUNPLAN line_to_destination(feedrate);
 >   #endif
-> 
+>
 >   #if ENABLED(DELTA_EXTRA) && ENABLED(Z_MIN_MAGIC)
-> 
+>
 >     bool change_filament_by_tap_tap = false;
-> 
+>
 >     inline void manage_tap_tap() {
 >       if ( !startup_auto_calibration
 >         && !IS_SD_PRINTING
@@ -1436,61 +1304,61 @@ diff Marlin/Marlin_main.cpp ../DiscoEasy200/Marlin_main.cpp
 >         enqueue_and_echo_commands_P(PSTR("G28\nM104 S180\nG0 F150 X0 Y0 Z100\nM109 S180\nD600\nM106 S255\nM104 S0\nG28"));
 >       }
 >     }
-> 
+>
 >     inline bool cant_enter_M600_or_D600();
-> 
+>
 >     inline void gcode_D600() {
 >       SERIAL_ECHOLNPGM( "Filament expulsion" );
-> 
+>
 >       if (cant_enter_M600_or_D600()) return;
-> 
+>
 >       // Synchronize all moves
 >       st_synchronize();
-> 
+>
 >       float previous_dest = destination[E_AXIS];
 >       destination[E_AXIS] += FILAMENTCHANGE_FINALRETRACT;
-> 
+>
 >       SET_FEEDRATE_FOR_EXTRUDER_MOVE;
 >       RUNPLAN;
 >       st_synchronize();
 >       destination[E_AXIS] = previous_dest;
 >       current_position[E_AXIS] = destination[E_AXIS];
 >       sync_plan_position_e();
-> 
+>
 >       change_filament_by_tap_tap = false;
 >     }
 >   #endif
-> 
-> 
+>
+>
 >   inline bool cant_enter_M600_or_D600() {
-> 
+>
 >     if (degHotend(active_extruder) < extrude_min_temp) {
 >       SERIAL_ERROR_START;
 >       SERIAL_ERRORLNPGM(MSG_TOO_COLD_FOR_M600);
-> 
+>
 >       #if ENABLED(FILAMENT_RUNOUT_SENSOR)
 >         filament_ran_out = false;
 >       #endif
-> 
+>
 >       #if ENABLED(SUMMON_PRINT_PAUSE)
 >         print_pause_summoned = false;
 >       #endif
-> 
+>
 >       #if ENABLED(DELTA_EXTRA) && ENABLED(Z_MIN_MAGIC)
 >         change_filament_by_tap_tap = false;
 >       #endif
-> 
+>
 >       return true;
 >     }
-> 
+>
 >     return false;
 >   }
-> 
+>
 >   #if ENABLED(ONE_LED)
 >     // Pre-declaration
 >     inline void set_notify_warning();
 >   #endif
-> 
+>
 6004a6900,6902
 >    *  P[pin]      - Pin to wait for, if not specified use lcd button
 >    *              - Pin can be A, B or C respectively for X, Y and Z endstops.
@@ -1509,14 +1377,14 @@ diff Marlin/Marlin_main.cpp ../DiscoEasy200/Marlin_main.cpp
 <       float fr60 = feedrate / 60;
 ---
 >     if (cant_enter_M600_or_D600()) return;
-> 
+>
 >     #if ENABLED(SUMMON_PRINT_PAUSE)
 >       // Simulate direct call M600
 >       print_pause_summoned = true;
 6021a6918,6920
 >     float lastpos[NUM_AXIS];
 >     float previous_feedrate;
-> 
+>
 6025,6030c6924,6927
 <     #if ENABLED(DELTA)
 <       #define RUNPLAN calculate_delta(destination); \
@@ -1526,7 +1394,7 @@ diff Marlin/Marlin_main.cpp ../DiscoEasy200/Marlin_main.cpp
 <     #endif
 ---
 >     previous_feedrate = feedrate;
-> 
+>
 >     //finish moves
 >     // st_synchronize();
 6037a6935
@@ -1562,7 +1430,7 @@ diff Marlin/Marlin_main.cpp ../DiscoEasy200/Marlin_main.cpp
 ---
 >     // validate planned all moves
 6069a6983,7040
-> 
+>
 >     // DAGOMA added
 >     // Determine exit/pin state after moving away
 >     int pin_number = -1;
@@ -1581,11 +1449,11 @@ diff Marlin/Marlin_main.cpp ../DiscoEasy200/Marlin_main.cpp
 >       else {
 >         pin_number = code_value();
 >       }
-> 
+>
 >       int pin_state = code_seen('S') ? code_value() : -1; // required pin state - default is inverted
-> 
+>
 >       if (pin_state >= -1 && pin_state <= 1) {
-> 
+>
 >         // DAGOMA - byPass sensitive pin
 >         /*
 >         for (uint8_t i = 0; i < COUNT(sensitive_pins); i++) {
@@ -1597,18 +1465,18 @@ diff Marlin/Marlin_main.cpp ../DiscoEasy200/Marlin_main.cpp
 >         */
 >         if (pin_number > -1) {
 >           target = LOW;
-> 
+>
 >           //pinMode(pin_number, INPUT);
-> 
+>
 >           switch (pin_state) {
 >             case 1:
 >               target = HIGH;
 >               break;
-> 
+>
 >             case 0:
 >               target = LOW;
 >               break;
-> 
+>
 >             case -1:
 >               target = !digitalRead(pin_number);
 >               break;
@@ -1617,9 +1485,9 @@ diff Marlin/Marlin_main.cpp ../DiscoEasy200/Marlin_main.cpp
 >       } // pin_state -1 0 1
 >     } // code_seen('P')
 >     // END DAGOMA added
-> 
-> 
-> 
+>
+>
+>
 6075a7047
 >     #if DISABLED(NO_LCD_FOR_FILAMENTCHANGEABLE)
 6076a7049
@@ -1634,13 +1502,13 @@ diff Marlin/Marlin_main.cpp ../DiscoEasy200/Marlin_main.cpp
 <         }
 <         idle(true);
 ---
-> 
+>
 >     #if HAS_FILRUNOUT
 >     bool can_exit_pause;
 >     do { // Loop while no filament
 >       can_exit_pause = true;
 >     #endif
-> 
+>
 >       #if DISABLED(NO_LCD_FOR_FILAMENTCHANGEABLE)
 >       while ( ! ( lcd_clicked() || (pin_number != -1 && digitalRead(pin_number) == target) ) ) {
 6090,6093c7064,7131
@@ -1658,13 +1526,13 @@ diff Marlin/Marlin_main.cpp ../DiscoEasy200/Marlin_main.cpp
 >             lcd_quick_feedback();
 >             #endif
 >             next_tick = ms + 2500UL; // feedback every 2.5s while waiting
-> 
+>
 >             // Ensure steppers stay enabled
 >             enable_x();
 >             enable_y();
 >             enable_z();
-> 
-> 
+>
+>
 >             #if ENABLED( DELTA_EXTRA )
 >               // Only checked every 2.5s
 >               // Detected if sd is out
@@ -1684,14 +1552,14 @@ diff Marlin/Marlin_main.cpp ../DiscoEasy200/Marlin_main.cpp
 >               }
 >             #endif
 >           }
-> 
+>
 >           #if ENABLED(DELTA_EXTRA) && ENABLED(Z_MIN_MAGIC)
 >             // Must be check quicker than 2.5s
 >             if ( z_magic_hit_count > 1 ) {
 >               gcode_D600();
 >             }
 >           #endif
-> 
+>
 >           idle(true);
 >         #else
 >           current_position[E_AXIS] += AUTO_FILAMENT_CHANGE_LENGTH;
@@ -1700,7 +1568,7 @@ diff Marlin/Marlin_main.cpp ../DiscoEasy200/Marlin_main.cpp
 >           st_synchronize();
 >         #endif
 >       } // while(!lcd_clicked)
-> 
+>
 >       #if ENABLED( NO_LCD_FOR_FILAMENTCHANGEABLE ) && ENABLED( FILAMENT_RUNOUT_SENSOR )
 >         // Wait a bit more to see if we want to disable filrunout sensor
 >         millis_t now = millis();
@@ -1720,7 +1588,7 @@ diff Marlin/Marlin_main.cpp ../DiscoEasy200/Marlin_main.cpp
 6095c7133,7149
 <     } // while(!lcd_clicked)
 ---
-> 
+>
 >     #if HAS_FILRUNOUT
 >         if( !(READ(FILRUNOUT_PIN) ^ FIL_RUNOUT_INVERTING) ) {
 >           #if ENABLED(SUMMON_PRINT_PAUSE) && ENABLED( NO_LCD_FOR_FILAMENTCHANGEABLE ) && ENABLED( FILAMENT_RUNOUT_SENSOR )
@@ -1736,7 +1604,7 @@ diff Marlin/Marlin_main.cpp ../DiscoEasy200/Marlin_main.cpp
 >         }
 >       } while( !can_exit_pause );
 >     #endif
-> 
+>
 6096a7151
 >     #if DISABLED(NO_LCD_FOR_FILAMENTCHANGEABLE)
 6097a7153
@@ -1755,32 +1623,32 @@ diff Marlin/Marlin_main.cpp ../DiscoEasy200/Marlin_main.cpp
 <       plan_buffer_line(delta[X_AXIS], delta[Y_AXIS], delta[Z_AXIS], destination[E_AXIS], fr60, active_extruder);
 <       plan_buffer_line(delta[X_AXIS], delta[Y_AXIS], delta[Z_AXIS], lastpos[E_AXIS], fr60, active_extruder);
 ---
-> 
+>
 >       SET_FEEDRATE_FOR_MOVE;
 >       plan_buffer_line(delta[X_AXIS], delta[Y_AXIS], delta[Z_AXIS], destination[E_AXIS], feedrate, active_extruder);
-> 
+>
 >       SET_FEEDRATE_FOR_EXTRUDER_MOVE;
 >       plan_buffer_line(delta[X_AXIS], delta[Y_AXIS], delta[Z_AXIS], lastpos[E_AXIS], feedrate, active_extruder);
 6125a7189,7190
-> 
+>
 >       SET_FEEDRATE_FOR_MOVE;
 6128a7194
-> 
+>
 6129a7196,7197
-> 
+>
 >       SET_FEEDRATE_FOR_EXTRUDER_MOVE;
 6132a7201,7203
 >     // Validates all planned moves
 >     st_synchronize();
-> 
+>
 6136a7208,7214
 >     #if ENABLED(SUMMON_PRINT_PAUSE)
 >       print_pause_summoned = false;
 >     #endif
-> 
+>
 >     // Restore previous feedrate
 >     feedrate = previous_feedrate;
-> 
+>
 6186a7265,7305
 > /*****************************************************************************
 >  * DAGOMA.FR Specific
@@ -1790,42 +1658,42 @@ diff Marlin/Marlin_main.cpp ../DiscoEasy200/Marlin_main.cpp
 >   SECOND_SERIAL.print("SSID:");
 >   SECOND_SERIAL.println(current_command_args);
 > }
-> 
+>
 > inline void gcode_D701() {
 >   SECOND_SERIAL.print("PSWD:");
 >   SECOND_SERIAL.println(current_command_args);
 > }
-> 
+>
 > inline void gcode_D702() {
 >   SECOND_SERIAL.println("REDY");
 > }
-> 
+>
 > inline void gcode_D710() {
 >   SECOND_SERIAL.print("PNAM:");
 >   SECOND_SERIAL.println(current_command_args);
 > }
-> 
+>
 > inline void gcode_D711() {
 >   SECOND_SERIAL.print("APIU:");
 >   SECOND_SERIAL.println(current_command_args);
 > }
-> 
+>
 > inline void gcode_D712() {
 >   SECOND_SERIAL.print("APIK:");
 >   SECOND_SERIAL.println(current_command_args);
 > }
-> 
+>
 > inline void gcode_D720() {
 >   SERIAL_ECHO_START;
 >   SERIAL_ECHOPGM("D:");
 >   SERIAL_ECHOLN(current_command_args);
 > }
-> 
+>
 > #endif
-> 
+>
 6428a7548,7923
 > #if ENABLED( DELTA_EXTRA )
-> 
+>
 > inline void abort_sd_printing() {
 >   commands_in_queue = 0;
 >   quickStop();
@@ -1835,11 +1703,11 @@ diff Marlin/Marlin_main.cpp ../DiscoEasy200/Marlin_main.cpp
 >   setTargetHotend(0, 0);
 >   cancel_heatup = true;
 > }
-> 
+>
 > inline void gcode_D410() {
 >   abort_sd_printing();
 > }
-> 
+>
 > inline void gcode_D888() {
 >   SERIAL_ECHOLN( "Bizarre procedure" );
 >   float z_bizarre = 0.5;
@@ -1850,17 +1718,17 @@ diff Marlin/Marlin_main.cpp ../DiscoEasy200/Marlin_main.cpp
 >   if (code_seen('F')) {
 >     f_bizarre = code_value();
 >   }
-> 
+>
 >   float x_bizarre = 70;
 >   if (code_seen('X')) {
 >     x_bizarre = code_value();
 >   }
-> 
+>
 >   int N = 100;
 >   if (code_seen('N')) {
 >     N = code_value();
 >   }
-> 
+>
 >   for(int i=0; i<N; i++) {
 >     feedrate = f_bizarre;
 >     destination[X_AXIS] = x_bizarre;
@@ -1868,48 +1736,48 @@ diff Marlin/Marlin_main.cpp ../DiscoEasy200/Marlin_main.cpp
 >     destination[Z_AXIS] = z_bizarre;
 >     prepare_move();
 >     st_synchronize();
-> 
+>
 >     destination[X_AXIS] = x_bizarre + 10.0;
-> 
+>
 >     prepare_move();
 >     st_synchronize();
 >   }
 > }
-> 
+>
 > inline void gcode_D999() {
 >   SERIAL_ECHOLN( "Reseting board" );
 >   while( true ) {
 >     delay(1000);
 >   }
 > }
-> 
+>
 > inline void gcode_D851() {
->   
+>
 >   startup_auto_calibration = true;
-> 
+>
 >   SERIAL_ECHOLNPGM( "Starting full Delta calibration" );
-> 
+>
 >   postcompute_tri_ready = false; // Disable tri-delta correction
-> 
+>
 >   gcode_M502(); // Restore factory settings
-> 
+>
 >   if (code_seen('L')) {
 >     SERIAL_ECHOPGM( "Overriding L with: " );
 >     delta_diagonal_rod = code_value();
 >     SERIAL_ECHOLN( delta_diagonal_rod );
 >   }
-> 
+>
 >   gcode_M665(); // Re-Calc Delta settings
 >   gcode_M500(); // Save settings
-> 
+>
 >   gcode_G28();
-> 
-> 
+>
+>
 >   feedrate = homing_feedrate[ Z_AXIS ];
 >   //feedrate = max_feedrate[ Z_AXIS ] * 60;
-> 
+>
 >   float tower1_altitude, tower2_altitude, tower3_altitude, center_altitude;
-> 
+>
 >   // TOWER 1
 >   destination[X_AXIS] = delta_tower1_x;
 >   destination[Y_AXIS] = delta_tower1_y;
@@ -1917,7 +1785,7 @@ diff Marlin/Marlin_main.cpp ../DiscoEasy200/Marlin_main.cpp
 >   prepare_move();
 >   st_synchronize();
 >   tower1_altitude = get_probed_Z_avg();
-> 
+>
 >   // TOWER 2
 >   destination[X_AXIS] = delta_tower2_x;
 >   destination[Y_AXIS] = delta_tower2_y;
@@ -1925,7 +1793,7 @@ diff Marlin/Marlin_main.cpp ../DiscoEasy200/Marlin_main.cpp
 >   prepare_move();
 >   st_synchronize();
 >   tower2_altitude = get_probed_Z_avg();
-> 
+>
 >   // TOWER 3
 >   destination[X_AXIS] = delta_tower3_x;
 >   destination[Y_AXIS] = delta_tower3_y;
@@ -1933,21 +1801,21 @@ diff Marlin/Marlin_main.cpp ../DiscoEasy200/Marlin_main.cpp
 >   prepare_move();
 >   st_synchronize();
 >   tower3_altitude = get_probed_Z_avg();
-> 
+>
 >   // Use last result as endstops adujst
 >   endstop_adj[0] = tower1_altitude /*+ zprobe_zoffset*/;
 >   endstop_adj[1] = tower2_altitude /*+ zprobe_zoffset*/;
 >   endstop_adj[2] = tower3_altitude /*+ zprobe_zoffset*/;
-> 
+>
 >   // Store endstop adjust
 >   gcode_M500();
-> 
+>
 >   // JUST FOR REPORTING BACK
 >   // Take in account now
 >   gcode_G28();
-> 
+>
 >   feedrate = homing_feedrate[ Z_AXIS ];
-> 
+>
 >   // TOWER 1
 >   destination[X_AXIS] = delta_tower1_x;
 >   destination[Y_AXIS] = delta_tower1_y;
@@ -1955,7 +1823,7 @@ diff Marlin/Marlin_main.cpp ../DiscoEasy200/Marlin_main.cpp
 >   prepare_move();
 >   st_synchronize();
 >   tower1_altitude = get_probed_Z_avg();
-> 
+>
 >   // TOWER 2
 >   destination[X_AXIS] = delta_tower2_x;
 >   destination[Y_AXIS] = delta_tower2_y;
@@ -1963,7 +1831,7 @@ diff Marlin/Marlin_main.cpp ../DiscoEasy200/Marlin_main.cpp
 >   prepare_move();
 >   st_synchronize();
 >   tower2_altitude = get_probed_Z_avg();
-> 
+>
 >   // TOWER 3
 >   destination[X_AXIS] = delta_tower3_x;
 >   destination[Y_AXIS] = delta_tower3_y;
@@ -1971,8 +1839,8 @@ diff Marlin/Marlin_main.cpp ../DiscoEasy200/Marlin_main.cpp
 >   prepare_move();
 >   st_synchronize();
 >   tower3_altitude = get_probed_Z_avg();
-> 
-> 
+>
+>
 >   // CENTER
 >   destination[X_AXIS] = 0.0f;
 >   destination[Y_AXIS] = 0.0f;
@@ -1980,7 +1848,7 @@ diff Marlin/Marlin_main.cpp ../DiscoEasy200/Marlin_main.cpp
 >   prepare_move();
 >   st_synchronize();
 >   center_altitude = get_probed_Z_avg();
-> 
+>
 >   SERIAL_ECHOLNPGM( "R probed points:" );
 >   SERIAL_ECHOPGM  ( "  T1: " );
 >   SERIAL_ECHOLN   ( tower1_altitude );
@@ -1990,31 +1858,31 @@ diff Marlin/Marlin_main.cpp ../DiscoEasy200/Marlin_main.cpp
 >   SERIAL_ECHOLN   ( tower3_altitude );
 >   SERIAL_ECHOPGM  ( "   C: " );
 >   SERIAL_ECHOLN   ( center_altitude );
-> 
+>
 >   float mean_ref_plan_altitude = ( tower1_altitude + tower2_altitude + tower3_altitude ) / 3.0;
 >   float diff_center_altitude = center_altitude - mean_ref_plan_altitude;
-> 
+>
 >   SERIAL_ECHOPGM( "Initial mean based difference: " );
 >   SERIAL_ECHOLN ( diff_center_altitude );
-> 
+>
 >   SERIAL_ECHOPGM( "Initial delta radius: " );
 >   SERIAL_ECHOLN ( delta_radius );
-> 
+>
 >   do {
 >     delta_radius -= 2.0 * diff_center_altitude;
-> 
+>
 >     SERIAL_ECHOPGM( "Testing delta radius: " );
 >     SERIAL_ECHOLN ( delta_radius );
-> 
+>
 >     gcode_M665();
-> 
+>
 >     destination[X_AXIS] = delta_tower1_x;
 >     destination[Y_AXIS] = delta_tower1_y;
 >     destination[Z_AXIS] = 10.0f;
 >     prepare_move();
 >     st_synchronize();
 >     tower1_altitude = get_probed_Z_avg();
-> 
+>
 >     // TOWER 2
 >     destination[X_AXIS] = delta_tower2_x;
 >     destination[Y_AXIS] = delta_tower2_y;
@@ -2022,7 +1890,7 @@ diff Marlin/Marlin_main.cpp ../DiscoEasy200/Marlin_main.cpp
 >     prepare_move();
 >     st_synchronize();
 >     tower2_altitude = get_probed_Z_avg();
-> 
+>
 >     // TOWER 3
 >     destination[X_AXIS] = delta_tower3_x;
 >     destination[Y_AXIS] = delta_tower3_y;
@@ -2030,7 +1898,7 @@ diff Marlin/Marlin_main.cpp ../DiscoEasy200/Marlin_main.cpp
 >     prepare_move();
 >     st_synchronize();
 >     tower3_altitude = get_probed_Z_avg();
-> 
+>
 >     // CENTER
 >     destination[X_AXIS] = 0.0f;
 >     destination[Y_AXIS] = 0.0f;
@@ -2038,7 +1906,7 @@ diff Marlin/Marlin_main.cpp ../DiscoEasy200/Marlin_main.cpp
 >     prepare_move();
 >     st_synchronize();
 >     center_altitude = get_probed_Z_avg();
-> 
+>
 >     SERIAL_ECHOLNPGM( "R probed points:" );
 >     SERIAL_ECHOPGM  ( "  T1: " );
 >     SERIAL_ECHOLN   ( tower1_altitude );
@@ -2048,27 +1916,27 @@ diff Marlin/Marlin_main.cpp ../DiscoEasy200/Marlin_main.cpp
 >     SERIAL_ECHOLN   ( tower3_altitude );
 >     SERIAL_ECHOPGM  ( "   C: " );
 >     SERIAL_ECHOLN   ( center_altitude );
-> 
+>
 >     mean_ref_plan_altitude = ( tower1_altitude + tower2_altitude + tower3_altitude ) / 3.0;
 >     diff_center_altitude = center_altitude - mean_ref_plan_altitude;
-> 
+>
 >     SERIAL_ECHOPGM( "NEW Mean based difference: " );
 >     SERIAL_ECHOLN ( diff_center_altitude );
 >     SERIAL_ECHOPGM( "With delta radius: " );
 >     SERIAL_ECHOLN ( delta_radius );
 >   } while( abs( diff_center_altitude ) > 0.05 );
-> 
-> 
+>
+>
 >   SERIAL_ECHOPGM( "Storing delta radius: " );
 >   SERIAL_ECHOLN ( delta_radius );
-> 
+>
 >   // Store delta_radius
 >   gcode_M500();
-> 
+>
 >   // Take in account now
 >   gcode_G28();
 >   // Now, we need to adjust endstops offset with the corrected radius
-> 
+>
 >   // TOWER 1
 >   destination[X_AXIS] = delta_tower1_x;
 >   destination[Y_AXIS] = delta_tower1_y;
@@ -2076,7 +1944,7 @@ diff Marlin/Marlin_main.cpp ../DiscoEasy200/Marlin_main.cpp
 >   prepare_move();
 >   st_synchronize();
 >   tower1_altitude = get_probed_Z_avg();
-> 
+>
 >   // TOWER 2
 >   destination[X_AXIS] = delta_tower2_x;
 >   destination[Y_AXIS] = delta_tower2_y;
@@ -2084,7 +1952,7 @@ diff Marlin/Marlin_main.cpp ../DiscoEasy200/Marlin_main.cpp
 >   prepare_move();
 >   st_synchronize();
 >   tower2_altitude = get_probed_Z_avg();
-> 
+>
 >   // TOWER 3
 >   destination[X_AXIS] = delta_tower3_x;
 >   destination[Y_AXIS] = delta_tower3_y;
@@ -2092,7 +1960,7 @@ diff Marlin/Marlin_main.cpp ../DiscoEasy200/Marlin_main.cpp
 >   prepare_move();
 >   st_synchronize();
 >   tower3_altitude = get_probed_Z_avg();
-> 
+>
 >   // CENTER
 >   destination[X_AXIS] = 0.0f;
 >   destination[Y_AXIS] = 0.0f;
@@ -2100,7 +1968,7 @@ diff Marlin/Marlin_main.cpp ../DiscoEasy200/Marlin_main.cpp
 >   prepare_move();
 >   st_synchronize();
 >   center_altitude = get_probed_Z_avg();
-> 
+>
 >   SERIAL_ECHOLNPGM( "R probed points:" );
 >   SERIAL_ECHOPGM  ( "  T1: " );
 >   SERIAL_ECHOLN   ( tower1_altitude );
@@ -2110,31 +1978,31 @@ diff Marlin/Marlin_main.cpp ../DiscoEasy200/Marlin_main.cpp
 >   SERIAL_ECHOLN   ( tower3_altitude );
 >   SERIAL_ECHOPGM  ( "   C: " );
 >   SERIAL_ECHOLN   ( center_altitude );
-> 
+>
 >   mean_ref_plan_altitude = ( tower1_altitude + tower2_altitude + tower3_altitude ) / 3.0;
 >   diff_center_altitude = center_altitude - mean_ref_plan_altitude;
-> 
+>
 >   SERIAL_ECHOPGM( "Mean based difference: " );
 >   SERIAL_ECHOLN( diff_center_altitude );
-> 
+>
 >   SERIAL_ECHOPGM( "With delta radius: " );
 >   SERIAL_ECHOLN ( delta_radius );
-> 
+>
 >   // Use last result as endstops adujst
 >   endstop_adj[0] += tower1_altitude /*+ zprobe_zoffset*/;
 >   endstop_adj[1] += tower2_altitude /*+ zprobe_zoffset*/;
 >   endstop_adj[2] += tower3_altitude /*+ zprobe_zoffset*/;
-> 
+>
 >   // Store endstop adjust
 >   gcode_M500();
-> 
+>
 >   #if ENABLED(DEBUG_LEVELING_FEATURE)
 >     if (DEBUGGING(LEVELING)) {
-> 
+>
 >       // JUST FOR REPORTING BACK
 >       // Take in account now
 >       gcode_G28();
-> 
+>
 >       // TOWER 1
 >       destination[X_AXIS] = delta_tower1_x;
 >       destination[Y_AXIS] = delta_tower1_y;
@@ -2142,7 +2010,7 @@ diff Marlin/Marlin_main.cpp ../DiscoEasy200/Marlin_main.cpp
 >       prepare_move();
 >       st_synchronize();
 >       tower1_altitude = get_probed_Z_avg();
-> 
+>
 >       // TOWER 2
 >       destination[X_AXIS] = delta_tower2_x;
 >       destination[Y_AXIS] = delta_tower2_y;
@@ -2150,7 +2018,7 @@ diff Marlin/Marlin_main.cpp ../DiscoEasy200/Marlin_main.cpp
 >       prepare_move();
 >       st_synchronize();
 >       tower2_altitude = get_probed_Z_avg();
-> 
+>
 >       // TOWER 3
 >       destination[X_AXIS] = delta_tower3_x;
 >       destination[Y_AXIS] = delta_tower3_y;
@@ -2158,7 +2026,7 @@ diff Marlin/Marlin_main.cpp ../DiscoEasy200/Marlin_main.cpp
 >       prepare_move();
 >       st_synchronize();
 >       tower3_altitude = get_probed_Z_avg();
-> 
+>
 >       // CENTER
 >       destination[X_AXIS] = 0.0f;
 >       destination[Y_AXIS] = 0.0f;
@@ -2166,7 +2034,7 @@ diff Marlin/Marlin_main.cpp ../DiscoEasy200/Marlin_main.cpp
 >       prepare_move();
 >       st_synchronize();
 >       center_altitude = get_probed_Z_avg();
-> 
+>
 >        SERIAL_ECHOLNPGM( "R probed points:" );
 >       SERIAL_ECHOPGM  ( "  T1: " );
 >       SERIAL_ECHOLN   ( tower1_altitude );
@@ -2176,30 +2044,30 @@ diff Marlin/Marlin_main.cpp ../DiscoEasy200/Marlin_main.cpp
 >       SERIAL_ECHOLN   ( tower3_altitude );
 >       SERIAL_ECHOPGM  ( "   C: " );
 >       SERIAL_ECHOLN   ( center_altitude );
-> 
+>
 >       mean_ref_plan_altitude = ( tower1_altitude + tower2_altitude + tower3_altitude ) / 3.0;
 >       diff_center_altitude = center_altitude - mean_ref_plan_altitude;
-> 
+>
 >       SERIAL_ECHOPGM( "Mean based difference: " );
 >       SERIAL_ECHOLN( diff_center_altitude );
-> 
+>
 >       SERIAL_ECHOPGM( "With delta radius: " );
 >       SERIAL_ECHOLN ( delta_radius );
 >     }
 >   #endif
-> 
+>
 >   gcode_G28();
-> 
+>
 >   startup_auto_calibration = false;
 > }
-> 
+>
 > #if ENABLED(Z_MIN_MAGIC)
 > // Pre-declaration
 > inline void gcode_D600();
 > #endif
-> 
+>
 > #endif // DELTA_EXTRA End
-> 
+>
 7046a8542,8588
 >     case 'D': switch (codenum) {
 >       // DAGOMA.FR Specific
@@ -2249,99 +2117,99 @@ diff Marlin/Marlin_main.cpp ../DiscoEasy200/Marlin_main.cpp
 >       }
 >     break;
 7125a8668,8750
-> 
+>
 >     #if ENABLED( DELTA_EXTRA )
 >       int i=0;
 >       // Outer
 >       probe_plan[i][0] = delta_tower1_x;
 >       probe_plan[i][1] = delta_tower1_y;
 >       i++;
-> 
+>
 >       probe_plan[i][0] = -COS_60 * radius;
 >       probe_plan[i][1] = -SIN_60 * radius;
 >       i++;
-> 
+>
 >       probe_plan[i][0] = 0.0;
 >       probe_plan[i][1] = -1.0 * radius;
 >       i++;
-> 
+>
 >       probe_plan[i][0] = COS_60 * radius;
 >       probe_plan[i][1] = -SIN_60 * radius;
 >       i++;
-> 
+>
 >       probe_plan[i][0] = delta_tower2_x;
 >       probe_plan[i][1] = delta_tower2_y;
 >       i++;
-> 
+>
 >       probe_plan[i][0] = radius;
 >       probe_plan[i][1] = 0.0;
 >       i++;
-> 
+>
 >       probe_plan[i][0] = SIN_60 * radius;
 >       probe_plan[i][1] = COS_60 * radius;
 >       i++;
-> 
+>
 >       probe_plan[i][0] = COS_60 * radius;
 >       probe_plan[i][1] = SIN_60 * radius;
 >       i++;
-> 
+>
 >       probe_plan[i][0] = delta_tower3_x;
 >       probe_plan[i][1] = delta_tower3_y;
 >       i++;
-> 
+>
 >       probe_plan[i][0] = -COS_60 * radius;
 >       probe_plan[i][1] = SIN_60 * radius;
 >       i++;
-> 
+>
 >       probe_plan[i][0] = -SIN_60 * radius;
 >       probe_plan[i][1] = COS_60 * radius;
 >       i++;
-> 
+>
 >       probe_plan[i][0] = -radius;
 >       probe_plan[i][1] = 0.0;
 >       i++;
-> 
+>
 >       // Inner
 >       probe_plan[i][0] = -SIN_60 * radius / 2.0;
 >       probe_plan[i][1] = -COS_60 * radius / 2.0;
 >       i++;
-> 
+>
 >       probe_plan[i][0] = 0.0;
 >       probe_plan[i][1] = -radius / 2.0;
 >       i++;
-> 
+>
 >       probe_plan[i][0] = SIN_60 * radius / 2.0;
 >       probe_plan[i][1] = -COS_60 * radius / 2.0;
 >       i++;
-> 
+>
 >       probe_plan[i][0] = SIN_60 * radius / 2.0;
 >       probe_plan[i][1] = COS_60 * radius / 2.0;
 >       i++;
-> 
+>
 >       probe_plan[i][0] = 0.0;
 >       probe_plan[i][1] = radius / 2.0;
 >       i++;
-> 
+>
 >       probe_plan[i][0] = -SIN_60 * radius / 2.0;
 >       probe_plan[i][1] = COS_60 * radius / 2.0;
 >       i++;
-> 
+>
 >       // Center
 >       probe_plan[i][0] = 0.0;
 >       probe_plan[i][1] = 0.0;
 >       i++;
-> 
+>
 >     #endif
 7154a8780,8788
 >     inline float triangle_get_point_offset( const float x, const float y, const short t ) {
 >       // z = - (d + b.y + a.x) / c ;
->       return - ( 
+>       return - (
 >         probed_tri_postcompute_d[t] +
 >         probed_tri_postcompute_b[t] * y +
 >         probed_tri_postcompute_a[t] * x
 >       ) / probed_tri_postcompute_c[t];
 >     }
-> 
+>
 7157c8791,8792
 <       if (delta_grid_spacing[0] == 0 || delta_grid_spacing[1] == 0) return; // G29 not done!
 ---
@@ -2361,7 +2229,7 @@ diff Marlin/Marlin_main.cpp ../DiscoEasy200/Marlin_main.cpp
 <             left = (1 - ratio_y) * z1 + ratio_y * z2,
 <             right = (1 - ratio_y) * z3 + ratio_y * z4,
 <             offset = (1 - ratio_x) * left + ratio_x * right;
-< 
+<
 <       delta[X_AXIS] += offset;
 <       delta[Y_AXIS] += offset;
 <       delta[Z_AXIS] += offset;
@@ -2379,7 +2247,7 @@ diff Marlin/Marlin_main.cpp ../DiscoEasy200/Marlin_main.cpp
 >               left = (1 - ratio_y) * z1 + ratio_y * z2,
 >               right = (1 - ratio_y) * z3 + ratio_y * z4,
 >               offset = (1 - ratio_x) * left + ratio_x * right;
-> 
+>
 >         delta[X_AXIS] += offset;
 >         delta[Y_AXIS] += offset;
 >         delta[Z_AXIS] += offset;
@@ -2417,62 +2285,62 @@ diff Marlin/Marlin_main.cpp ../DiscoEasy200/Marlin_main.cpp
 >         */
 >       #else // if DELTA_EXTRA
 >         if ( ! postcompute_tri_ready ) return;
-> 
+>
 >         if ( cartesian[Z_AXIS] > z_smooth_tri_leveling_height ) return;
-> 
+>
 >         // Find the index tri for z correction
 >         short idx = triangle_index( cartesian[X_AXIS], cartesian[Y_AXIS] );
-> 
+>
 >         // Get offset from tri equations
 >         float offset = triangle_get_point_offset( cartesian[X_AXIS], cartesian[Y_AXIS], idx );
-> 
+>
 >         // Adjust final-offset againt Z altitude
 >         // to reduce it after 0.6mm
 >         offset *= ( z_smooth_tri_leveling_height - cartesian[Z_AXIS] ) / z_smooth_tri_leveling_height;
-> 
+>
 >         delta[X_AXIS] += offset;
 >         delta[Y_AXIS] += offset;
 >         delta[Z_AXIS] += offset;
-> 
+>
 >         delta[X_AXIS] += zprobe_zoffset;
 >         delta[Y_AXIS] += zprobe_zoffset;
 >         delta[Z_AXIS] += zprobe_zoffset;
-> 
+>
 >         // Bed support smoothness
 >         delta[X_AXIS] += 0.05;
 >         delta[Y_AXIS] += 0.05;
 >         delta[Z_AXIS] += 0.05;
-> 
+>
 >       #endif // End DELTA_EXTRA
 7735a9400,9568
 > #if ENABLED(ONE_BUTTON)
-> 
+>
 >   millis_t next_one_button_check = 0;
 >   bool asked_to_print = false;
 >   bool asked_to_pause = false;
 >   millis_t has_to_print_timeout = 0;
-> 
+>
 > #endif
-> 
+>
 > #if ENABLED(ONE_LED)
-> 
+>
 >   int state_blink = 0;
 >   millis_t next_one_led_tick = 0;
 >   bool notify_warning = false;
 >   millis_t notify_warning_timeout = 0;
-> 
+>
 >   inline void set_notify_warning() {
 >     notify_warning = true;
 >     notify_warning_timeout = millis() + 2000UL;
 >   }
-> 
+>
 >   inline void manage_one_led() {
 >     millis_t now = millis();
 >     if ( PENDING( now, next_one_led_tick ) ) return;
-> 
+>
 >     state_blink = ( state_blink + 1 ) % 10;
 >     next_one_led_tick = now + 150UL;
-> 
+>
 >     if ( startup_auto_calibration ) {
 >       switch( state_blink ) {
 >         case 0:
@@ -2521,9 +2389,9 @@ diff Marlin/Marlin_main.cpp ../DiscoEasy200/Marlin_main.cpp
 >     }
 >   }
 > #endif
-> 
+>
 > #if ENABLED(SUMMON_PRINT_PAUSE)
-> 
+>
 >   inline void manage_pause_summoner() {
 >     // PAUSE PUSHED
 >     if (!print_pause_summoned
@@ -2547,24 +2415,24 @@ diff Marlin/Marlin_main.cpp ../DiscoEasy200/Marlin_main.cpp
 >       }
 >     }
 >   }
-> 
+>
 > #endif // SUMMON_PRINT_PAUSE
-> 
+>
 > #if ENABLED(ONE_BUTTON)
-> 
+>
 >   inline void manage_one_button() {
 >     // De-Bounce bouton press
 >     millis_t now = millis();
 >     if (PENDING(now, next_one_button_check)) return;
 >     next_one_button_check = now + 100UL;
-> 
+>
 >     if ( IS_SD_PRINTING
 >       && asked_to_print
 >       && !( READ(ONE_BUTTON_PIN) ^ ONE_BUTTON_INVERTING )
 >     ) {
 >       asked_to_print = false;
 >     }
-> 
+>
 >     if ( !IS_SD_PRINTING
 >       && asked_to_print
 >       && !( READ(ONE_BUTTON_PIN) ^ ONE_BUTTON_INVERTING )
@@ -2575,7 +2443,7 @@ diff Marlin/Marlin_main.cpp ../DiscoEasy200/Marlin_main.cpp
 >         set_notify_warning();
 >       #endif
 >     }
-> 
+>
 >     if ( !startup_auto_calibration
 >       && !IS_SD_PRINTING
 >       && !asked_to_print
@@ -2588,41 +2456,41 @@ diff Marlin/Marlin_main.cpp ../DiscoEasy200/Marlin_main.cpp
 >           return;
 >         }
 >       #endif
-> 
+>
 >       #if ENABLED( FILAMENT_RUNOUT_SENSOR )
 >         filrunout_bypassed = false;
 >       #endif
 >       asked_to_print = true;
 >       has_to_print_timeout = now + 2500UL;
-> 
+>
 >       #if ENABLED(ONE_LED)
 >         one_led_on();
 >       #endif
-> 
+>
 >       card.autostart_index = 0;
 >       card.cardOK = false;
 >       card.checkautostart( true );
-> 
+>
 >       #if ENABLED(ONE_LED)
 >         if ( !card.cardOK ) set_notify_warning();
 >       #endif
 >     }
 >   }
 > #endif
-> 
+>
 > #if ENABLED( Z_MIN_MAGIC )
 >   millis_t last_debug_z_magic_timing = 0UL;
 > #endif
-> 
+>
 7743a9577,9584
-> 
+>
 > /*
 >   if (z_magic_derivative_bias < -5.0) {
 >     SERIAL_ECHO("z_magic_d: ");
 >     SERIAL_ECHOLN(z_magic_derivative_bias);
 >   }
 > */
-> 
+>
 7744a9586,9597
 >   #if ENABLED(SUMMON_PRINT_PAUSE)
 >   manage_pause_summoner();
@@ -2641,17 +2509,17 @@ diff Marlin/Marlin_main.cpp ../DiscoEasy200/Marlin_main.cpp
 ---
 >   #if ENABLED(U8GLIB_SSD1306) && ENABLED(INTELLIGENT_LCD_REFRESH_RATE)
 >     if (IS_SD_PRINTING && axis_homed[X_AXIS] && axis_homed[Y_AXIS] && axis_homed[Z_AXIS]) {
-> 
+>
 >       if ( last_intelligent_F_lcd_update != feedrate ) {
 >         last_intelligent_F_authorized_lcd_update = feedrate > last_intelligent_F_lcd_update;
 >         last_intelligent_F_lcd_update = feedrate;
 >       }
-> 
+>
 >       if ( last_intelligent_z_lcd_update != current_position[Z_AXIS] || last_intelligent_F_authorized_lcd_update ) {
 >         last_intelligent_z_lcd_update = current_position[Z_AXIS];
 >         lcd_update();
 >       }
-> 
+>
 >     }
 >     else {
 >       lcd_update();
@@ -2659,11 +2527,11 @@ diff Marlin/Marlin_main.cpp ../DiscoEasy200/Marlin_main.cpp
 >   #else
 >     lcd_update();
 >   #endif
-> 
+>
 >   #if ENABLED( WIFI_PRINT )
 >     manage_second_serial_status();
 >   #endif
-> 
+>
 >   #if ENABLED( Z_MIN_MAGIC )
 >     if (DEBUGGING(LEVELING)) {
 >       millis_t now = millis();
@@ -2710,14 +2578,14 @@ diff Marlin/Marlin_main.cpp ../DiscoEasy200/Marlin_main.cpp
 >     }
 7775,7776d9688
 <   millis_t ms = millis();
-< 
+<
 7839a9752,9783
 >   #if ENABLED(IS_MONO_FAN) || ENABLED(PRINTER_HEAD_EASY)
 >     if ( ELAPSED(ms, next_fan_auto_regulation_check) ) {
 >       float max_temp = 0.0;
 >       for (int8_t cur_extruder = 0; cur_extruder < EXTRUDERS; ++cur_extruder)
 >         max_temp = max(max_temp, degHotend(cur_extruder));
-> 
+>
 >       #if ENABLED(IS_MONO_FAN)
 >         short fs = 0;
 >         if ( max_temp < MONO_FAN_MIN_TEMP ) {
@@ -2727,10 +2595,10 @@ diff Marlin/Marlin_main.cpp ../DiscoEasy200/Marlin_main.cpp
 >           fs = fanSpeeds[0];
 >           NOLESS(fs, MONO_FAN_MIN_PWM);
 >         }
-> 
+>
 >         fanSpeeds[0] = fs;
 >       #endif
-> 
+>
 >       #if ENABLED(PRINTER_HEAD_EASY)
 >         if ( max_temp < PRINTER_HEAD_EASY_CONSTANT_FAN_MIN_TEMP ) {
 >           analogWrite(PRINTER_HEAD_EASY_CONSTANT_FAN_PIN, 0);
@@ -2739,11 +2607,11 @@ diff Marlin/Marlin_main.cpp ../DiscoEasy200/Marlin_main.cpp
 >           analogWrite(PRINTER_HEAD_EASY_CONSTANT_FAN_PIN, 255);
 >         }
 >       #endif
-> 
+>
 >       next_fan_auto_regulation_check = ms + 2500UL;
 >     }
 >   #endif
-> 
+>
 7927a9872,9904
 >   #if ENABLED( DELTA_EXTRA )
 >     #if ENABLED( SDSUPPORT )
@@ -2777,7 +2645,7 @@ diff Marlin/Marlin_main.cpp ../DiscoEasy200/Marlin_main.cpp
 >     #endif
 >     gcode_G28();
 >   #endif
-> 
+>
 7942c9919,9921
 <   cli();   // disable interrupts
 ---
@@ -2792,7 +2660,7 @@ diff Marlin/Marlin_main.cpp ../DiscoEasy200/Marlin_main.cpp
 >       delay(140);
 >     #endif
 7952d9936
-< 
+<
 7954a9939
 >       SERIAL_ECHOLNPGM("Pause : No more filament detected");
 diff Marlin/pins.h ../DiscoEasy200/pins.h
@@ -2822,7 +2690,7 @@ diff Marlin/stepper.cpp ../DiscoEasy200/stepper.cpp
 > #if ENABLED(EMERGENCY_STOP)
 >   bool trigger_emergency_stop = false;
 > #endif
-> 
+>
 339a344,350
 > #if ENABLED( Z_MIN_MAGIC )
 >   #define LAST_MEASURE_NUMBER 10
@@ -2830,9 +2698,9 @@ diff Marlin/stepper.cpp ../DiscoEasy200/stepper.cpp
 >   volatile float last_measures_avg = { 0.0 };
 >   volatile int last_measures_idx = 0;
 > #endif
-> 
+>
 473d483
-< 
+<
 482,484c492,513
 <         #if ENABLED(Z_MIN_PROBE_ENDSTOP) && DISABLED(Z_MIN_PROBE_USES_Z_MIN_ENDSTOP_PIN) && ENABLED(HAS_Z_MIN_PROBE)
 <           if (z_probe_is_active) {
@@ -2852,18 +2720,18 @@ diff Marlin/stepper.cpp ../DiscoEasy200/stepper.cpp
 >                 trigger_emergency_stop = true;
 >               }
 >             #endif
-> 
+>
 >             // Assumption: this piece of code is used to stop the move in checking bit in Z_MIN_PROBE flag.
 >             if (TEST_ENDSTOP(_ENDSTOP(Z, MIN_PROBE)) && current_block->steps[_AXIS(Z)] > 0) {
 >               _SET_TRIGSTEPS(Z);
 >               _ENDSTOP_HIT(Z);
 >               step_events_completed = current_block->step_event_count;
 >             }
-> 
+>
 486c515,569
 <           }
 ---
-> 
+>
 >             // FIXME: Quick fix to exit earlier
 >             //        If emergency stop is triggered
 >             // TODO:  See if this code can be avoided with below Z_MIN_MAGIC possible override
@@ -2874,7 +2742,7 @@ diff Marlin/stepper.cpp ../DiscoEasy200/stepper.cpp
 >             }
 >           #endif
 >         #endif
-> 
+>
 >         #if ENABLED(Z_MIN_PROBE_ENDSTOP) && DISABLED(Z_MIN_PROBE_USES_Z_MIN_ENDSTOP_PIN) && ENABLED(HAS_Z_MIN_PROBE)
 >           #if ENABLED( Z_MIN_MAGIC )
 >               if ( z_probe_is_active /*&& can_measure_z_magic*/ ) {
@@ -2882,7 +2750,7 @@ diff Marlin/stepper.cpp ../DiscoEasy200/stepper.cpp
 >                 int z_sensor_i = z_magic_value;
 >                 float z_sensor_f = float( z_sensor_i );
 >                 float derivative_bias = ( z_sensor_f - last_measures_avg ) / 2.0;
-> 
+>
 >                 /*if ( derivative_bias > -2.0 ) {*/
 >                 if ( z_magic_derivative_bias > -5.0 ) {
 >                   // We do not hit anything
@@ -2892,25 +2760,25 @@ diff Marlin/stepper.cpp ../DiscoEasy200/stepper.cpp
 >                   // We hit something
 >                   SET_BIT(current_endstop_bits, Z_MIN_PROBE, 1 );
 >                 }
-> 
+>
 >                 // Update last_measures avg
 >                 last_measures[ last_measures_idx ] = z_sensor_f;
 >                 last_measures_idx = ( last_measures_idx + 1 ) % LAST_MEASURE_NUMBER;
-> 
+>
 >                 last_measures_avg = last_measures[0];
 >                 for( int i=1; i<LAST_MEASURE_NUMBER; i++ ) {
 >                   last_measures_avg += last_measures[ i ];
 >                 }
 >                 last_measures_avg /= float( LAST_MEASURE_NUMBER );
-> 
+>
 >                 if (TEST_ENDSTOP(_ENDSTOP(Z, MIN_PROBE)) && current_block->steps[_AXIS(Z)] > 0) {
 >                   _SET_TRIGSTEPS(Z);
 >                   _ENDSTOP_HIT(Z);
 >                   step_events_completed = current_block->step_event_count;
 >                 }
-> 
+>
 >                 if (TEST_ENDSTOP(Z_MIN_PROBE)) SBI(endstop_hit_bits, Z_MIN_PROBE);
-> 
+>
 >               } // END z_probe_is_active
 >           #else
 >             if (z_probe_is_active) {
@@ -2923,7 +2791,7 @@ diff Marlin/stepper.h ../DiscoEasy200/stepper.h
 > #if ENABLED(EMERGENCY_STOP)
 >   extern bool trigger_emergency_stop;
 > #endif
-> 
+>
 diff Marlin/temperature.cpp ../DiscoEasy200/temperature.cpp
 239c239
 <     #if HAS_AUTO_FAN
@@ -2949,13 +2817,13 @@ diff Marlin/temperature.cpp ../DiscoEasy200/temperature.cpp
 > #if ENABLED( Z_MIN_MAGIC )
 >   bool can_measure_z_magic = false;
 >   static unsigned long raw_z_magic_value = 0;
-> 
+>
 >   #define Z_MAGIC_LAST_MEASURES_NUMBER 5
 >   volatile float z_magic_last_measures[Z_MAGIC_LAST_MEASURES_NUMBER] = { 0.0 };
 >   volatile float z_magic_last_measures_avg = 0.0 ;
 >   volatile int z_magic_last_measures_idx = 0;
 >   float z_magic_derivative_bias = 0.0;
-> 
+>
 >   #define Z_MAGIC_DERIVATIVE_BIAS_THRESHOLD (8.0)
 >   #define Z_MAGIC_MIN_ELASTICITY_RESPONSE_MILLIS 50UL
 >   #define Z_MAGIC_MAX_ELASTICITY_RESPONSE_MILLIS 80UL
@@ -2965,28 +2833,28 @@ diff Marlin/temperature.cpp ../DiscoEasy200/temperature.cpp
 >   millis_t z_magic_elasticity_max_timeout = 0UL;
 >   millis_t z_magic_hit_timeout = 0UL;
 >   millis_t z_magic_tap_timeout = 0UL;
->   
+>
 >   int z_magic_value = 0;
 >   int z_magic_hit_count = 0;
-> 
+>
 > inline void update_z_magic( ) {
-> 
+>
 >   raw_z_magic_value = ADC;
 >   z_magic_value = raw_z_magic_value;
-> 
+>
 >   float z_magic_f = float( z_magic_value );
-> 
+>
 >   millis_t now = millis();
-> 
+>
 >   z_magic_derivative_bias = ( z_magic_f - z_magic_last_measures_avg ) / 2.0;
-> 
+>
 >   if ( ELAPSED(now, z_magic_hit_timeout) ) {
 >     if ( z_magic_derivative_bias < -Z_MAGIC_DERIVATIVE_BIAS_THRESHOLD ) {
 >       z_magic_hit_timeout = now + Z_MAGIC_EDGE_DELAY_MILLIS;
 >       z_magic_elasticity_max_timeout = now + Z_MAGIC_MAX_ELASTICITY_RESPONSE_MILLIS;
 >     }
 >   }
-> 
+>
 >   if ( PENDING(now, z_magic_elasticity_max_timeout) ) {
 >     if ( ELAPSED(now, z_magic_elasticity_min_timeout) ) {
 >       if ( z_magic_derivative_bias > Z_MAGIC_DERIVATIVE_BIAS_THRESHOLD ) {
@@ -2996,25 +2864,25 @@ diff Marlin/temperature.cpp ../DiscoEasy200/temperature.cpp
 >       }
 >     }
 >   }
-> 
+>
 >   if (ELAPSED(now, z_magic_tap_timeout)) {
 >     z_magic_hit_count = 0;
 >   }
->   
-> 
+>
+>
 >   // Update last_measures avg
 >   z_magic_last_measures[ z_magic_last_measures_idx ] = z_magic_f;
 >   z_magic_last_measures_idx = ( z_magic_last_measures_idx + 1 ) % Z_MAGIC_LAST_MEASURES_NUMBER;
-> 
+>
 >   z_magic_last_measures_avg = z_magic_last_measures[0];
 >   for( int i=1; i<Z_MAGIC_LAST_MEASURES_NUMBER; i++ ) {
 >     z_magic_last_measures_avg += z_magic_last_measures[ i ];
 >   }
 >   z_magic_last_measures_avg /= float( Z_MAGIC_LAST_MEASURES_NUMBER );
 > }
-> 
+>
 > #endif
-> 
+>
 1635a1715,1717
 >       #if ENABLED( Z_MIN_MAGIC )
 >         can_measure_z_magic = false;
@@ -3081,7 +2949,7 @@ diff Marlin/temperature.h ../DiscoEasy200/temperature.h
 >   extern float z_magic_derivative_bias;
 >   extern int z_magic_hit_count;
 > #endif
-> 
+>
 diff Marlin/thermistortables.h ../DiscoEasy200/thermistortables.h
 1083a1084,1192
 > #if (THERMISTORHEATER_0 == 16) || (THERMISTORHEATER_1 == 16) || (THERMISTORHEATER_2 == 16) || (THERMISTORHEATER_3 == 16) || (THERMISTORBED == 16)
@@ -3133,8 +3001,8 @@ diff Marlin/thermistortables.h ../DiscoEasy200/thermistortables.h
 >   {1024*OVERSAMPLENR,-273} // for safety
 > };
 > #endif
-> 
-> 
+>
+>
 > #if (THERMISTORHEATER_0 == 17) || (THERMISTORHEATER_1 == 17) || (THERMISTORHEATER_2 == 17) || (THERMISTORHEATER_3 == 17) || (THERMISTORBED == 17)
 > // 17 is 100K thermistor - Alternative ATC Semitec 104GT-2 (4.7k pullup) Dagoma.Fr - MKS_Base - version (measured/tested/approved)
 > const short temptable_17[][2] PROGMEM = {
@@ -3192,14 +3060,14 @@ diff Marlin/thermistortables.h ../DiscoEasy200/thermistortables.h
 >   {1024*OVERSAMPLENR,-273} // for safety
 > };
 > #endif
-> 
+>
 Seulement dans ../DiscoEasy200/: .travis.yml
 diff Marlin/ultralcd.cpp ../DiscoEasy200/ultralcd.cpp
 50a51,54
 > #if ENABLED( AUTO_BED_LEVELING_FEATURE )
 >   #define Z_OFFSET_REINIT_START_VALUE (-4.0f)
 > #endif
-> 
+>
 98a103,106
 >   #if ENABLED(AUTO_BED_LEVELING_FEATURE)
 >     static void lcd_set_z_offsets();
@@ -3209,9 +3077,9 @@ diff Marlin/ultralcd.cpp ../DiscoEasy200/ultralcd.cpp
 >   #if ENABLED(HAS_SERVO_ENDSTOPS) && ENABLED(Z_DUAL_ENDSTOPS)
 >     float z_probed_value_before_z_raise;
 >   #endif
-> 
+>
 693a706
-> 
+>
 749c762,766
 <      MENU_ITEM(gcode, MSG_FILAMENTCHANGE, PSTR("M600"));
 ---
@@ -3223,7 +3091,7 @@ diff Marlin/ultralcd.cpp ../DiscoEasy200/ultralcd.cpp
 875a893,954
 > void lcd_parallel_x(){
 >   lcd_return_to_status();
-> 
+>
 >   enqueue_and_echo_commands_P( PSTR("M117 Origine Machine") );  // ; Message sur afficheur
 >   enqueue_and_echo_commands_P( PSTR("M84") );  //                  ; Disable motors to encure Z_SAFE_HOMING
 >   #if ENABLED(Z_DUAL_ENDSTOPS)
@@ -3232,18 +3100,18 @@ diff Marlin/ultralcd.cpp ../DiscoEasy200/ultralcd.cpp
 >   enqueue_and_echo_commands_P( PSTR("G28") );  //             	   ; Home X Y Z
 >   enqueue_and_echo_commands_P( PSTR("G90") );  //                	 ; Passage coordonnees absolues
 >   wait_all_commands_finished__CALLABLE_FROM_LCD_ONLY();
-> 
+>
 >   //;Parallelisme Axe X
 >   enqueue_and_echo_commands_P( PSTR("M117 Parallelisme X") );  //      ; Message sur afficheur
 >   #if DISABLED(Z_DUAL_ENDSTOPS)
 >     enqueue_and_echo_commands_P( PSTR("G1 Z5 F9000") );  //           ; lift nozzle
 >     wait_all_commands_finished__CALLABLE_FROM_LCD_ONLY();
-> 
+>
 >     enqueue_and_echo_commands_P( PSTR("G1 X-24 Y-14 F9000") );  //
 >     enqueue_and_echo_commands_P( PSTR("G92 Z20") );  //
 >     enqueue_and_echo_commands_P( PSTR("G91") );  //                   ; Passage coordonnees relatives
 >     wait_all_commands_finished__CALLABLE_FROM_LCD_ONLY();
-> 
+>
 >     enqueue_and_echo_commands_P( PSTR("G1 Z-15 F200") );  //		     ; Descente en dessous du plateau
 >     enqueue_and_echo_commands_P( PSTR("G1 Z15 F9000") );  //
 >     enqueue_and_echo_commands_P( PSTR("G28") );  //		            ; Home
@@ -3252,42 +3120,42 @@ diff Marlin/ultralcd.cpp ../DiscoEasy200/ultralcd.cpp
 >     enqueue_and_echo_commands_P( PSTR("G1 X0 F9000") );
 >     enqueue_and_echo_commands_P( PSTR("G30") );
 >     wait_all_commands_finished__CALLABLE_FROM_LCD_ONLY();
-> 
+>
 >     float z_left, z_right, z_diff;
 >     #if ENABLED(HAS_SERVO_ENDSTOPS)
 >       z_left = z_probed_value_before_z_raise;
 >     #else
 >       z_left = current_position[ Z_AXIS ];
 >     #endif
-> 
+>
 >     enqueue_and_echo_commands_P( PSTR("G1 X350 F9000") );
 >     enqueue_and_echo_commands_P( PSTR("G30") );
 >     wait_all_commands_finished__CALLABLE_FROM_LCD_ONLY();
-> 
-> 
+>
+>
 >     #if ENABLED(HAS_SERVO_ENDSTOPS)
 >       z_right = z_probed_value_before_z_raise;
 >     #else
 >       z_right = current_position[ Z_AXIS ];
 >     #endif
-> 
+>
 >     z_diff = z_right - z_left;
 >     z_endstop_adj = z_diff;
-> 
+>
 >     enqueue_and_echo_commands_P( PSTR("G28") );
 >     enqueue_and_echo_commands_P( PSTR("M666 Z0") );
 >     wait_all_commands_finished__CALLABLE_FROM_LCD_ONLY();
-> 
+>
 >   #endif // Z_DUAL_ENDSTOPS
-> 
+>
 >   enqueue_and_echo_commands_P( PSTR("G90") );  //                   ; Passage coordonnees absolues
 > }
-> 
+>
 1081a1161,1164
 >   /**
 >    * Step 1: MBL entry-point: "Cancel" or "Level Bed"
 >    */
-> 
+>
 1089a1173,1181
 >  //Préparer
 >    // Déplacer un axes
@@ -3297,9 +3165,9 @@ diff Marlin/ultralcd.cpp ../DiscoEasy200/ultralcd.cpp
 >    // Eteindre alim.
 >    // Tout le reste : Réglages avancés
 >      // Préchauffage ABS
-> 
+>
 1097a1190
-> 
+>
 1099c1192
 <   // Auto Home
 ---
@@ -3324,7 +3192,7 @@ diff Marlin/ultralcd.cpp ../DiscoEasy200/ultralcd.cpp
 >       MENU_ITEM(function, MSG_PREHEAT_PLA, lcd_preheat_pla0);
 >     #endif
 >   #endif
-> 
+>
 >   #if ENABLED(PARALLEL_X_FEATURE)
 >     MENU_ITEM(function, MSG_PARALLEL_X, lcd_parallel_x);
 >   #endif
@@ -3337,7 +3205,7 @@ diff Marlin/ultralcd.cpp ../DiscoEasy200/ultralcd.cpp
 ---
 >     MENU_ITEM(submenu, MSG_Z_OFFSET, lcd_set_z_offsets);
 1119a1219
-> 
+>
 1121c1221
 <   // Move Axis
 ---
@@ -3359,15 +3227,15 @@ diff Marlin/ultralcd.cpp ../DiscoEasy200/ultralcd.cpp
 >     else
 >       MENU_ITEM(gcode, MSG_SWITCH_PS_ON, PSTR("M80"));
 >   #endif
-> 
+>
 >   MENU_ITEM(submenu, MSG_PREPARE_ADVENCED, lcd_prepare_advanced_menu);
-> 
+>
 >   END_MENU();
 > }
-> 
+>
 > static void lcd_prepare_advanced_menu() {
 >   START_MENU();
-> 
+>
 >   //
 >   // ^ Main
 >   //
@@ -3376,7 +3244,7 @@ diff Marlin/ultralcd.cpp ../DiscoEasy200/ultralcd.cpp
 >   // Auto Home
 >   //
 >   MENU_ITEM(gcode, MSG_AUTO_HOME, PSTR("G28"));
-> 
+>
 >   //
 >   // Level Bed
 >   //
@@ -3414,7 +3282,7 @@ diff Marlin/ultralcd.cpp ../DiscoEasy200/ultralcd.cpp
 ---
 >   MENU_ITEM(gcode, MSG_DISABLE_STEPPERS, PSTR("M84"));
 1205a1333,1366
-> 
+>
 > static void _lcd_move_callback(const char* name, AxisEnum axis, float min, float max, menuFunc_t callback) {
 >   ENCODER_DIRECTION_NORMAL();
 >   if (encoderPosition && movesplanned() <= 3) {
@@ -3429,7 +3297,7 @@ diff Marlin/ultralcd.cpp ../DiscoEasy200/ultralcd.cpp
 >   if (lcdDrawUpdate) lcd_implementation_drawedit(name, ftostr31(current_position[axis]));
 >   if (LCD_CLICKED) (*callback)();
 > }
-> 
+>
 > #if ENABLED( AUTO_BED_LEVELING_FEATURE )
 >   static void _lcd_move_callback_with_offset(const char* name, AxisEnum axis, float min, float max, menuFunc_t callback, float offset) {
 >     ENCODER_DIRECTION_NORMAL();
@@ -3446,138 +3314,138 @@ diff Marlin/ultralcd.cpp ../DiscoEasy200/ultralcd.cpp
 >     if (LCD_CLICKED) (*callback)();
 >   }
 > #endif
-> 
-> 
+>
+>
 1215c1376
 < static void lcd_move_z() { _lcd_move(PSTR(MSG_MOVE_Z), Z_AXIS, sw_endstop_min[Z_AXIS], sw_endstop_max[Z_AXIS]); }
 ---
 > static void lcd_move_z() { _lcd_move(PSTR(MSG_MOVE_Z), Z_AXIS, sw_endstop_min[Z_AXIS], sw_endstop_max[Z_AXIS]); SERIAL_ERRORLN("lcdZConf"); }
 1317a1479,1596
 > #if ENABLED( AUTO_BED_LEVELING_FEATURE )
-> 
+>
 > static void _lcd_reinit_z_offsets_saved(){
 >   START_MENU();
-> 
+>
 >   MENU_ITEM_DUMMY();
 >   MENU_ITEM_DUMMY();
 >   MENU_ITEM_DUMMY();
 >   MENU_ITEM_DUMMY();
-> 
+>
 >   lcd_implementation_drawmenu_generic(0, 1, PSTR(MSG_PARAMETERS), ' ', ' ');
 >   lcd_implementation_drawmenu_generic(0, 2, PSTR(MSG_SAVED), ' ', ' ');
-> 
+>
 >   encoderLine = 4;
 >   MENU_ITEM(submenu, MSG_LCD_OK, lcd_return_to_status);
-> 
-> 
+>
+>
 >   END_MENU();
 > }
-> 
+>
 > static void _lcd_reinit_z_offsets_wait(){
 >   START_MENU();
-> 
+>
 >   lcd_implementation_drawmenu_generic(0, 2, PSTR(MSG_WAIT), ' ', ' ');
-> 
+>
 >   END_MENU();
 > }
-> 
+>
 > static void _lcd_reinit_z_offsets_save_back(){
 >   lcd_goto_menu(_lcd_reinit_z_offsets_wait);
-> 
+>
 >   zprobe_zoffset = Z_OFFSET_REINIT_START_VALUE + current_position[Z_AXIS];
-> 
+>
 >   Config_StoreSettings();
 >   enqueue_and_echo_commands_P(PSTR("M84"));   // ; Disable motors to encure Z_SAFE_HOMING
 >   enqueue_and_echo_commands_P(PSTR("G28"));   // origine auto : besoin pour que le z soit pris en compte
->   enqueue_and_echo_commands_P(PSTR("G0 Z0")); // 
-> 
+>   enqueue_and_echo_commands_P(PSTR("G0 Z0")); //
+>
 >   wait_all_commands_finished__CALLABLE_FROM_LCD_ONLY();
-> 
+>
 >   defer_return_to_status = false;
 >   lcd_goto_menu(_lcd_reinit_z_offsets_saved);
 > }
-> 
+>
 > static void _lcd_reinit_z_offsets_zConfig(){
-> 
+>
 >   lcd_implementation_drawmenu_generic(0, 0, PSTR(MSG_PINCH), ' ', ' ');
 >   lcd_implementation_drawmenu_generic(0, 1, PSTR(MSG_SET_OFFSET), ' ', ' ');
-> 
+>
 >   //lcd_move_z();
 >   move_menu_scale = 0.05;
 >   _lcd_move_callback_with_offset(PSTR(MSG_MOVE_Z), Z_AXIS, sw_endstop_min[Z_AXIS], sw_endstop_max[Z_AXIS], _lcd_reinit_z_offsets_save_back, Z_OFFSET_REINIT_START_VALUE);
-> 
+>
 >   lcd_implementation_drawmenu_generic(0, 4, PSTR(MSG_VALIDATE), ' ', ' ');
 > }
-> 
-> 
+>
+>
 > static void _lcd_reinit_z_offsets_screenSheet(){
 >   START_MENU();
-> 
+>
 >   MENU_ITEM_DUMMY();
 >   MENU_ITEM_DUMMY();
 >   MENU_ITEM_DUMMY();
 >   MENU_ITEM_DUMMY();
-> 
+>
 >   lcd_implementation_drawmenu_generic(0, 0, PSTR(MSG_ADD_SHEET), ' ', ' ');
 >   lcd_implementation_drawmenu_generic(0, 1, PSTR(MSG_BESIDE_NOZZLE), ' ', ' ');
 >   lcd_implementation_drawmenu_generic(0, 2, PSTR(MSG_CLICK_OK), ' ', ' ');
 >   //_drawLineNr = 3;
 >   encoderLine = 4;
 >   MENU_ITEM(submenu, "OK", _lcd_reinit_z_offsets_zConfig);
-> 
+>
 >   END_MENU();
 > }
-> 
+>
 > //1 écran : Placez la feuille et validez
 > //2 écran : Pincez la feuille
-> 
+>
 > //si décalage : vérifier BED_CENTER_AT_0_0 n'est pas define dans la conf
-> 
+>
 > static void lcd_reinit_z_offsets(){
 >   lcd_goto_menu(_lcd_reinit_z_offsets_wait);
-> 
+>
 >   defer_return_to_status = true;
-> 
+>
 >   zprobe_zoffset = Z_OFFSET_REINIT_START_VALUE;
 >   Config_StoreSettings();
 >   enqueue_and_echo_commands_P(PSTR("M84"));  // ; Disable motors to encure Z_SAFE_HOMING
 >   enqueue_and_echo_commands_P(PSTR("G28"));  // origine auto
 >   wait_all_commands_finished__CALLABLE_FROM_LCD_ONLY();
-> 
+>
 >   lcd_goto_menu(_lcd_reinit_z_offsets_screenSheet);
 > }
-> 
+>
 > static void lcd_set_z_offsets_save_config() {
 >   Config_StoreSettings();
 >   enqueue_and_echo_commands_P(PSTR("M84"));   // ; Disable motors to encure Z_SAFE_HOMING
 >   enqueue_and_echo_commands_P(PSTR("G28"));
 >   enqueue_and_echo_commands_P(PSTR("G0 Z0")); // origine auto : besoin pour que le z soit pris en compte
 > }
-> 
+>
 > static void lcd_set_z_offsets() {
 >   START_MENU();
 >   MENU_ITEM(back, MSG_PREPARE);
->   
+>
 >   MENU_ITEM(function, "Reinitialiser", lcd_reinit_z_offsets);
 >   //zprobe_zoffset = -4.0;
 >   //Config_StoreSettings();
 >   //enqueue_and_echo_commands_P(PSTR("G28")); //origine auto
 >   //lcd_move_z();
-> 
+>
 >   MENU_ITEM_EDIT_CALLBACK(float32, MSG_ZPROBE_ZOFFSET, &zprobe_zoffset, Z_PROBE_OFFSET_RANGE_MIN, Z_PROBE_OFFSET_RANGE_MAX, lcd_set_z_offsets_save_config);
-> 
+>
 >   END_MENU();
 > }
-> 
+>
 > #endif
-> 
+>
 1493c1772
 <   #if FAN_COUNT > 0
 ---
 >   #if (FAN_COUNT > 0) && (DISABLED (IS_MONO_FAN))
 diff Marlin/ultralcd.h ../DiscoEasy200/ultralcd.h
 87a88,91
->   
+>
 >   #if ENABLED(HAS_SERVO_ENDSTOPS) && ENABLED(Z_DUAL_ENDSTOPS)
 >     extern float z_probed_value_before_z_raise;
 >   #endif
