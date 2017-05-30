@@ -32,7 +32,9 @@
 #include "Configuration_adv.h"
 #include "pins.h"
 #ifndef USBCON
-  #define HardwareSerial_h // trick to disable the standard HWserial
+  #ifndef USE_SECOND_SERIAL
+    #define HardwareSerial_h // trick to disable the standard HWserial
+  #endif
 #endif
 #include "Arduino.h"
 #include "Conditionals_post.h"

@@ -1,11 +1,3 @@
-
-diff Marlin/Conditionals.h ../DiscoEasy200/Conditionals.h
-273c273,275
-<     #define HardwareSerial_h // trick to disable the standard HWserial
----
->     #ifndef USE_SECOND_SERIAL
->       #define HardwareSerial_h // trick to disable the standard HWserial
->     #endif
 diff Marlin/Configuration_adv.h ../DiscoEasy200/Configuration_adv.h
 149c149
 < //#define FAN_KICKSTART_TIME 100
