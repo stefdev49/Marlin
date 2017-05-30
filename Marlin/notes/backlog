@@ -1,26 +1,3 @@
-diff Marlin/Configuration_adv.h ../DiscoEasy200/Configuration_adv.h
-149c149
-< //#define FAN_KICKSTART_TIME 100
----
-> #define FAN_KICKSTART_TIME 100
-508,509c508,509
-< #if ENABLED(ULTIPANEL)
-<   //#define FILAMENTCHANGEENABLE
----
-> #if ENABLED(ULTIPANEL) || ENABLED(NO_LCD_FOR_FILAMENTCHANGEABLE)
->   #define FILAMENTCHANGEENABLE
-511,512c511,512
-<     #define FILAMENTCHANGE_XPOS 3
-<     #define FILAMENTCHANGE_YPOS 3
----
->     #define FILAMENTCHANGE_XPOS 195
->     #define FILAMENTCHANGE_YPOS 195
-515,516c515,516
-<     #define FILAMENTCHANGE_FINALRETRACT -100
-<     #define AUTO_FILAMENT_CHANGE                //This extrude filament until you press the button on LCD
----
->     #define FILAMENTCHANGE_FINALRETRACT 0
->     //#define AUTO_FILAMENT_CHANGE                //This extrude filament until you press the button on LCD
 diff Marlin/Configuration.h ../DiscoEasy200/Configuration.h
 43a44,47
 > #define FILAMENTCHANGE_FEEDRATE_MULTIPLICATOR 5.0
