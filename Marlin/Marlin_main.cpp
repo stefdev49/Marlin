@@ -209,6 +209,16 @@
  * M363 - SCARA calibration: Move to cal-position PsiB (90 deg calibration - steps per degree)
  * M364 - SCARA calibration: Move to cal-position PSIC (90 deg to Theta calibration position)
  *
+ * ************ DAGOMA.FR Specific - This can change to suit future G-code regulations
+ * M700 - Wifi : Set SSID to use.
+ * M701 - Wifi : Set Password to use and connect !
+ * M702 - Wifi : Get current local IP Address if wifi is ready, 0 otherwize.
+ * M710 - Wifi : Set printer technical name.
+ * M711 - Wifi : Set API Url to use.
+ * M712 - Wifi : Set API Key to use.
+ * M720 - Wifi : Echo the string in serial .
+ *
+ * ************ DAGOMA.FR End ***************
  * ************ Custom codes - This can change to suit future G-code regulations
  * M100 - Watch Free Memory (For Debugging). (Requires M100_FREE_MEMORY_WATCHER)
  * M928 - Start SD logging: "M928 filename.gco". Stop with M29. (Requires SDSUPPORT)
@@ -293,6 +303,10 @@
 
 #if ENABLED(EXPERIMENTAL_I2CBUS)
   TWIBus i2c;
+#endif
+
+#if ENABLED(USE_SECOND_SERIAL)
+  #include "HardwareSerial.h"
 #endif
 
 #if ENABLED(G38_PROBE_TARGET)
@@ -471,6 +485,10 @@ millis_t previous_cmd_ms = 0;
 static millis_t max_inactive_time = 0;
 static millis_t stepper_inactive_time = (DEFAULT_STEPPER_DEACTIVE_TIME) * 1000UL;
 
+#if ENABLED(IS_MONO_FAN) || ENABLED(PRINTER_HEAD_EASY)
+  static millis_t next_fan_auto_regulation_check = 0;
+#endif
+
 // Print Job Timer
 #if ENABLED(PRINTCOUNTER)
   PrintCounter print_job_timer = PrintCounter();
@@ -628,6 +646,19 @@ float cartes[XYZ] = { 0 };
 
 #if ENABLED(FILAMENT_RUNOUT_SENSOR)
   static bool filament_ran_out = false;
+  const millis_t FRS_DEBOUNCE_DELAY = 250UL; // filament runout sensor delay
+  static millis_t frs_debounce_time = 0UL; // filament runout sensor debouncing count
+#endif
+#if ENABLED(SUMMON_PRINT_PAUSE)
+  static bool print_pause_summoned = false;
+  #if ENABLED(FILAMENT_RUNOUT_SENSOR)
+    static bool filrunout_bypassed = false;
+  #endif
+#endif
+#if ENABLED(U8GLIB_SSD1306) && ENABLED(INTELLIGENT_LCD_REFRESH_RATE)
+  static float last_intelligent_z_lcd_update = 0;
+  static float last_intelligent_F_lcd_update = 0;
+  static bool last_intelligent_F_authorized_lcd_update = false;
 #endif
 
 #if ENABLED(FILAMENT_CHANGE_FEATURE)
