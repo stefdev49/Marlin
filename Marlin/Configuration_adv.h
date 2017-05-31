@@ -769,7 +769,7 @@
  * This feature is required for the default FILAMENT_RUNOUT_SCRIPT.
  */
 #if ENABLED(ULTIPANEL) || ENABLED(NO_LCD_FOR_FILAMENTCHANGEABLE)
-  #define FILAMENT_CHANGE_FEATURE
+  #undef FILAMENT_CHANGE_FEATURE  // TODO wait until forward port complete
 #endif
 #if ENABLED(FILAMENT_CHANGE_FEATURE)
   #define FILAMENT_CHANGE_X_POS 195             // X position of hotend
