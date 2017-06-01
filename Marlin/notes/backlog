@@ -2518,16 +2518,6 @@ diff Marlin/temperature.cpp ../DiscoEasy200/temperature.cpp
 >         can_measure_z_magic = true;
 >         update_z_magic();
 >       #endif
-diff Marlin/temperature.h ../DiscoEasy200/temperature.h
-188a189,195
-> #if ENABLED( Z_MIN_MAGIC )
->   extern bool can_measure_z_magic;
->   extern int z_magic_value;
->   extern float z_magic_derivative_bias;
->   extern int z_magic_hit_count;
-> #endif
->
-Seulement dans ../DiscoEasy200/: .travis.yml
 diff Marlin/ultralcd.cpp ../DiscoEasy200/ultralcd.cpp
 50a51,54
 > #if ENABLED( AUTO_BED_LEVELING_FEATURE )
