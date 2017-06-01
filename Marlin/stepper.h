@@ -87,6 +87,10 @@ class Stepper {
       static bool abort_on_endstop_hit;
     #endif
 
+    #if ENABLED(EMERGENCY_STOP)
+      extern bool trigger_emergency_stop;
+    #endif
+
     #if ENABLED(Z_DUAL_ENDSTOPS)
       static bool performing_homing;
     #endif

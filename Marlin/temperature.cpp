@@ -190,8 +190,8 @@ int16_t Temperature::minttemp_raw[HOTENDS] = ARRAY_BY_HOTENDS(HEATER_0_RAW_LO_TE
   int16_t Temperature::meas_shift_index;  // Index of a delayed sample in buffer
 #endif
 
-#if HAS_AUTO_FAN
-  millis_t Temperature::next_auto_fan_check_ms = 0;
+#if HAS_AUTO_FAN || ENABLED(IS_MONO_FAN) || ENABLED(PRINTER_HEAD_EASY)
+  static millis_t next_auto_fan_check_ms = 0;
 #endif
 
 uint8_t Temperature::soft_pwm[HOTENDS];
@@ -227,7 +227,7 @@ uint8_t Temperature::soft_pwm[HOTENDS];
     float workKp = 0, workKi = 0, workKd = 0;
     float max = 0, min = 10000;
 
-    #if HAS_AUTO_FAN
+    #if HAS_AUTO_FAN || ENABLED(IS_MONO_FAN) || ENABLED(PRINTER_HEAD_EASY)
       next_auto_fan_check_ms = temp_ms + 2500UL;
     #endif
 
@@ -286,9 +286,19 @@ uint8_t Temperature::soft_pwm[HOTENDS];
         NOLESS(max, input);
         NOMORE(min, input);
 
-        #if HAS_AUTO_FAN
+        #if HAS_AUTO_FAN || ENABLED(IS_MONO_FAN) || ENABLED(PRINTER_HEAD_EASY)
           if (ELAPSED(ms, next_auto_fan_check_ms)) {
-            checkExtruderAutoFans();
+            #if HAS_AUTO_FAN
+              checkExtruderAutoFans();
+            #endif
+            #if ENABLED(IS_MONO_FAN)
+              digitalWrite(FAN_PIN, MONO_FAN_MIN_PWM);
+              analogWrite(FAN_PIN, MONO_FAN_MIN_PWM);
+            #endif
+            #if ENABLED(PRINTER_HEAD_EASY)
+              digitalWrite(PRINTER_HEAD_EASY_CONSTANT_FAN_PIN, 255);
+              analogWrite(PRINTER_HEAD_EASY_CONSTANT_FAN_PIN, 255);
+            #endif
             next_auto_fan_check_ms = ms + 2500UL;
           }
         #endif
@@ -1581,6 +1591,75 @@ void Temperature::set_current_temp_raw() {
   }
 #endif // PINS_DEBUGGING
 
+#if ENABLED( Z_MIN_MAGIC )
+  bool can_measure_z_magic = false;
+  static unsigned long raw_z_magic_value = 0;
+
+  #define Z_MAGIC_LAST_MEASURES_NUMBER 5
+  volatile float z_magic_last_measures[Z_MAGIC_LAST_MEASURES_NUMBER] = { 0.0 };
+  volatile float z_magic_last_measures_avg = 0.0 ;
+  volatile int z_magic_last_measures_idx = 0;
+  float z_magic_derivative_bias = 0.0;
+
+  #define Z_MAGIC_DERIVATIVE_BIAS_THRESHOLD (8.0)
+  #define Z_MAGIC_MIN_ELASTICITY_RESPONSE_MILLIS 50UL
+  #define Z_MAGIC_MAX_ELASTICITY_RESPONSE_MILLIS 80UL
+  #define Z_MAGIC_EDGE_DELAY_MILLIS 150UL
+  #define Z_MAGIC_HIT_DELAY_MILLIS 500UL
+  millis_t z_magic_elasticity_min_timeout = 0UL;
+  millis_t z_magic_elasticity_max_timeout = 0UL;
+  millis_t z_magic_hit_timeout = 0UL;
+  millis_t z_magic_tap_timeout = 0UL;
+
+  int z_magic_value = 0;
+  int z_magic_hit_count = 0;
+
+inline void update_z_magic( ) {
+
+  raw_z_magic_value = ADC;
+  z_magic_value = raw_z_magic_value;
+
+  float z_magic_f = float( z_magic_value );
+
+  millis_t now = millis();
+
+  z_magic_derivative_bias = ( z_magic_f - z_magic_last_measures_avg ) / 2.0;
+
+  if ( ELAPSED(now, z_magic_hit_timeout) ) {
+    if ( z_magic_derivative_bias < -Z_MAGIC_DERIVATIVE_BIAS_THRESHOLD ) {
+      z_magic_hit_timeout = now + Z_MAGIC_EDGE_DELAY_MILLIS;
+      z_magic_elasticity_max_timeout = now + Z_MAGIC_MAX_ELASTICITY_RESPONSE_MILLIS;
+    }
+  }
+
+  if ( PENDING(now, z_magic_elasticity_max_timeout) ) {
+    if ( ELAPSED(now, z_magic_elasticity_min_timeout) ) {
+      if ( z_magic_derivative_bias > Z_MAGIC_DERIVATIVE_BIAS_THRESHOLD ) {
+        z_magic_elasticity_min_timeout = now + Z_MAGIC_EDGE_DELAY_MILLIS;
+        z_magic_tap_timeout = now + Z_MAGIC_HIT_DELAY_MILLIS;
+        z_magic_hit_count += 1;
+      }
+    }
+  }
+
+  if (ELAPSED(now, z_magic_tap_timeout)) {
+    z_magic_hit_count = 0;
+  }
+
+
+  // Update last_measures avg
+  z_magic_last_measures[ z_magic_last_measures_idx ] = z_magic_f;
+  z_magic_last_measures_idx = ( z_magic_last_measures_idx + 1 ) % Z_MAGIC_LAST_MEASURES_NUMBER;
+
+  z_magic_last_measures_avg = z_magic_last_measures[0];
+  for( int i=1; i<Z_MAGIC_LAST_MEASURES_NUMBER; i++ ) {
+    z_magic_last_measures_avg += z_magic_last_measures[ i ];
+  }
+  z_magic_last_measures_avg /= float( Z_MAGIC_LAST_MEASURES_NUMBER );
+}
+
+#endif
+
 /**
  * Timer 0 is shared with millies so don't change the prescaler.
  *
@@ -1926,66 +2005,120 @@ void Temperature::isr() {
     #if HAS_TEMP_0
       case PrepareTemp_0:
         START_ADC(TEMP_0_PIN);
+        #if ENABLED(Z_MIN_MAGIC)
+          can_measure_z_magic = false;
+        #endif
         break;
       case MeasureTemp_0:
         raw_temp_value[0] += ADC;
+        #if ENABLED(Z_MIN_MAGIC)
+          can_measure_z_magic = false;
+        #endif
         break;
     #endif
 
     #if HAS_TEMP_BED
       case PrepareTemp_BED:
         START_ADC(TEMP_BED_PIN);
+        #if ENABLED(Z_MIN_MAGIC)
+          can_measure_z_magic = true;
+          START_ADC(15);
+        #endif
         break;
       case MeasureTemp_BED:
         raw_temp_bed_value += ADC;
+        #if ENABLED(Z_MIN_MAGIC)
+          can_measure_z_magic = true;
+          update_z_magic();
+        #endif
         break;
     #endif
 
     #if HAS_TEMP_1
       case PrepareTemp_1:
         START_ADC(TEMP_1_PIN);
+        #if ENABLED(Z_MIN_MAGIC)
+          can_measure_z_magic = true;
+          START_ADC(15);
+        #endif
         break;
       case MeasureTemp_1:
         raw_temp_value[1] += ADC;
+        #if ENABLED(Z_MIN_MAGIC)
+          can_measure_z_magic = true;
+          update_z_magic();
+        #endif
         break;
     #endif
 
     #if HAS_TEMP_2
       case PrepareTemp_2:
         START_ADC(TEMP_2_PIN);
+        #if ENABLED(Z_MIN_MAGIC)
+          can_measure_z_magic = true;
+          START_ADC(15);
+        #endif
         break;
       case MeasureTemp_2:
         raw_temp_value[2] += ADC;
+        #if ENABLED(Z_MIN_MAGIC)
+          can_measure_z_magic = true;
+          update_z_magic();
+        #endif
         break;
     #endif
 
     #if HAS_TEMP_3
       case PrepareTemp_3:
         START_ADC(TEMP_3_PIN);
+        #if ENABLED(Z_MIN_MAGIC)
+          can_measure_z_magic = true;
+          START_ADC(15);
+        #endif
         break;
       case MeasureTemp_3:
         raw_temp_value[3] += ADC;
+        #if ENABLED(Z_MIN_MAGIC)
+          can_measure_z_magic = true;
+          update_z_magic();
+        #endif
         break;
     #endif
 
     #if HAS_TEMP_4
       case PrepareTemp_4:
         START_ADC(TEMP_4_PIN);
+        #if ENABLED(Z_MIN_MAGIC)
+          can_measure_z_magic = true;
+          START_ADC(15);
+        #endif
         break;
       case MeasureTemp_4:
         raw_temp_value[4] += ADC;
+        #if ENABLED(Z_MIN_MAGIC)
+          can_measure_z_magic = true;
+          update_z_magic();
+        #endif
         break;
     #endif
 
     #if ENABLED(FILAMENT_WIDTH_SENSOR)
       case Prepare_FILWIDTH:
         START_ADC(FILWIDTH_PIN);
+        #if ENABLED(Z_MIN_MAGIC)
+          can_measure_z_magic = true;
+          START_ADC(15);
+        #endif
       break;
       case Measure_FILWIDTH:
         if (ADC > 102) { // Make sure ADC is reading > 0.5 volts, otherwise don't read.
           raw_filwidth_value -= (raw_filwidth_value >> 7); // Subtract 1/128th of the raw_filwidth_value
           raw_filwidth_value += ((unsigned long)ADC << 7); // Add new ADC reading, scaled by 128
         }
+        #if ENABLED(Z_MIN_MAGIC)
+          can_measure_z_magic = true;
+          update_z_magic();
+        #endif
         break;
     #endif
 
