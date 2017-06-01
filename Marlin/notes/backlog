@@ -2899,9 +2899,3 @@ diff Marlin/ultralcd.cpp ../DiscoEasy200/ultralcd.cpp
 <   #if FAN_COUNT > 0
 ---
 >   #if (FAN_COUNT > 0) && (DISABLED (IS_MONO_FAN))
-diff Marlin/ultralcd.h ../DiscoEasy200/ultralcd.h
-87a88,91
->
->   #if ENABLED(HAS_SERVO_ENDSTOPS) && ENABLED(Z_DUAL_ENDSTOPS)
->     extern float z_probed_value_before_z_raise;
->   #endif
