@@ -72,6 +72,10 @@ block_t* Stepper::current_block = NULL;  // A pointer to the block currently bei
   bool Stepper::performing_homing = false;
 #endif
 
+
+#if ENABLED(EMERGENCY_STOP)
+  bool Stepper::trigger_emergency_stop = false;
+#endif
 // private:
 
 unsigned char Stepper::last_direction_bits = 0;        // The next stepping-bits to be output
@@ -315,6 +319,13 @@ void Stepper::set_directions() {
     }
   #endif // !ADVANCE && !LIN_ADVANCE
 }
+
+#if ENABLED(Z_MIN_MAGIC)
+  #define LAST_MEASURE_NUMBER 10
+  volatile float last_measures[LAST_MEASURE_NUMBER] = { 0.0 };
+  volatile float last_measures_avg = { 0.0 };
+  volatile int last_measures_idx = 0;
+#endif
 
 #if ENABLED(ENDSTOP_INTERRUPTS_FEATURE)
   extern volatile uint8_t e_hit;

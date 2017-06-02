@@ -49,6 +49,10 @@ int lcd_preheat_hotend_temp[2], lcd_preheat_bed_temp[2], lcd_preheat_fan_speed[2
   millis_t previous_lcd_status_ms = 0;
 #endif
 
+#if ENABLED(AUTO_BED_LEVELING_FEATURE)
+  #define Z_OFFSET_REINIT_START_VALUE (-4.0f)
+#endif
+
 #if ENABLED(BABYSTEPPING)
   long babysteps_done = 0;
   #if ENABLED(BABYSTEP_ZPROBE_OFFSET)
@@ -119,6 +123,10 @@ uint16_t max_display_update_time = 0;
   void lcd_control_temperature_preheat_material2_settings_menu();
   void lcd_control_motion_menu();
   void lcd_control_filament_menu();
+  #if ENABLED(AUTO_BED_LEVELING_FEATURE)
+    void lcd_set_z_offsets();
+  #endif
+  void lcd_prepare_advanced_menu();
 
   #if ENABLED(LCD_INFO_MENU)
     #if ENABLED(PRINTCOUNTER)
@@ -434,6 +442,10 @@ uint16_t max_display_update_time = 0;
     uint8_t lcd_sd_status;
   #endif
 
+  #if ENABLED(HAS_SERVO_ENDSTOPS) && ENABLED(Z_DUAL_ENDSTOPS)
+    float z_probed_value_before_z_raise;
+  #endif
+
   #if ENABLED(PIDTEMP)
     float raw_Ki, raw_Kd; // place-holders for Ki and Kd edits
   #endif
@@ -528,7 +540,7 @@ uint16_t max_display_update_time = 0;
 
 /**
  *
- * "Info Screen"
+ * "Info Screen"// ULTIPA
  *
  * This is very display-dependent, so the lcd implementation draws this.
  */
@@ -1034,6 +1046,15 @@ void kill_screen(const char* lcd_msg) {
       lcd_filament_change_show_message(FILAMENT_CHANGE_MESSAGE_INIT);
       enqueue_and_echo_commands_P(PSTR("M600"));
     }
+    void lcd_enqueue_filament_change_pa() {
+      if (!DEBUGGING(DRYRUN) && thermalManager.tooColdToExtrude(active_extruder)) {
+        lcd_save_previous_screen();
+        lcd_goto_screen(lcd_filament_change_toocold_menu);
+        return;
+      }
+      lcd_filament_change_show_message(FILAMENT_CHANGE_MESSAGE_INIT);
+      enqueue_and_echo_commands_P(PSTR("M600 PA"));
+    }
   #endif
 
   /**
@@ -1149,7 +1170,11 @@ void kill_screen(const char* lcd_msg) {
     //
     #if ENABLED(FILAMENT_CHANGE_FEATURE)
       if (!thermalManager.tooColdToExtrude(active_extruder))
-        MENU_ITEM(function, MSG_FILAMENTCHANGE, lcd_enqueue_filament_change);
+        #if ENABLED(SUMMON_PRINT_PAUSE)
+          MENU_ITEM(function, MSG_FILAMENTCHANGE, lcd_enqueue_filament_change);
+        #else
+          MENU_ITEM(function, MSG_FILAMENTCHANGE, lcd_enqueue_filament_change_pa);
+        #endif
     #endif
 
     END_MENU();
@@ -2074,6 +2099,124 @@ void kill_screen(const char* lcd_msg) {
     #define _MOVE_XY_ALLOWED true
   #endif
 
+  #if ENABLED(AUTO_BED_LEVELING_FEATURE)
+
+  void _lcd_reinit_z_offsets_saved(){
+    START_MENU();
+
+    MENU_ITEM_DUMMY();
+    MENU_ITEM_DUMMY();
+    MENU_ITEM_DUMMY();
+    MENU_ITEM_DUMMY();
+
+    lcd_implementation_drawmenu_generic(0, 1, PSTR(MSG_PARAMETERS), ' ', ' ');
+    lcd_implementation_drawmenu_generic(0, 2, PSTR(MSG_SAVED), ' ', ' ');
+
+    encoderLine = 4;
+    MENU_ITEM(submenu, MSG_LCD_OK, lcd_return_to_status);
+
+
+    END_MENU();
+  }
+
+  void _lcd_reinit_z_offsets_wait(){
+    START_MENU();
+
+    lcd_implementation_drawmenu_generic(0, 2, PSTR(MSG_WAIT), ' ', ' ');
+
+    END_MENU();
+  }
+
+  void _lcd_reinit_z_offsets_save_back(){
+    lcd_goto_menu(_lcd_reinit_z_offsets_wait);
+
+    zprobe_zoffset = Z_OFFSET_REINIT_START_VALUE + current_position[Z_AXIS];
+
+    Config_StoreSettings();
+    enqueue_and_echo_commands_P(PSTR("M84"));   // ; Disable motors to encure Z_SAFE_HOMING
+    enqueue_and_echo_commands_P(PSTR("G28"));   // origine auto : besoin pour que le z soit pris en compte
+    enqueue_and_echo_commands_P(PSTR("G0 Z0")); //
+
+    wait_all_commands_finished__CALLABLE_FROM_LCD_ONLY();
+
+    defer_return_to_status = false;
+    lcd_goto_menu(_lcd_reinit_z_offsets_saved);
+  }
+
+  void _lcd_reinit_z_offsets_zConfig(){
+
+    lcd_implementation_drawmenu_generic(0, 0, PSTR(MSG_PINCH), ' ', ' ');
+    lcd_implementation_drawmenu_generic(0, 1, PSTR(MSG_SET_OFFSET), ' ', ' ');
+
+    //lcd_move_z();
+    move_menu_scale = 0.05;
+    _lcd_move_callback_with_offset(PSTR(MSG_MOVE_Z), Z_AXIS, sw_endstop_min[Z_AXIS], sw_endstop_max[Z_AXIS], _lcd_reinit_z_offsets_save_back, Z_OFFSET_REINIT_START_VALUE);
+
+    lcd_implementation_drawmenu_generic(0, 4, PSTR(MSG_VALIDATE), ' ', ' ');
+  }
+
+
+  void _lcd_reinit_z_offsets_screenSheet(){
+    START_MENU();
+
+    MENU_ITEM_DUMMY();
+    MENU_ITEM_DUMMY();
+    MENU_ITEM_DUMMY();
+    MENU_ITEM_DUMMY();
+
+    lcd_implementation_drawmenu_generic(0, 0, PSTR(MSG_ADD_SHEET), ' ', ' ');
+    lcd_implementation_drawmenu_generic(0, 1, PSTR(MSG_BESIDE_NOZZLE), ' ', ' ');
+    lcd_implementation_drawmenu_generic(0, 2, PSTR(MSG_CLICK_OK), ' ', ' ');
+    //_drawLineNr = 3;
+    encoderLine = 4;
+    MENU_ITEM(submenu, "OK", _lcd_reinit_z_offsets_zConfig);
+
+    END_MENU();
+  }
+
+  //1 écran : Placez la feuille et validez
+  //2 écran : Pincez la feuille
+
+  //si décalage : vérifier BED_CENTER_AT_0_0 n'est pas define dans la conf
+
+  void lcd_reinit_z_offsets(){
+    lcd_goto_menu(_lcd_reinit_z_offsets_wait);
+
+    defer_return_to_status = true;
+
+    zprobe_zoffset = Z_OFFSET_REINIT_START_VALUE;
+    Config_StoreSettings();
+    enqueue_and_echo_commands_P(PSTR("M84"));  // ; Disable motors to encure Z_SAFE_HOMING
+    enqueue_and_echo_commands_P(PSTR("G28"));  // origine auto
+    wait_all_commands_finished__CALLABLE_FROM_LCD_ONLY();
+
+    lcd_goto_menu(_lcd_reinit_z_offsets_screenSheet);
+  }
+
+  void lcd_set_z_offsets_save_config() {
+    Config_StoreSettings();
+    enqueue_and_echo_commands_P(PSTR("M84"));   // ; Disable motors to encure Z_SAFE_HOMING
+    enqueue_and_echo_commands_P(PSTR("G28"));
+    enqueue_and_echo_commands_P(PSTR("G0 Z0")); // origine auto : besoin pour que le z soit pris en compte
+  }
+
+  void lcd_set_z_offsets() {
+    START_MENU();
+    MENU_ITEM(back, MSG_PREPARE);
+
+    MENU_ITEM(function, "Réinitialiser", lcd_reinit_z_offsets);
+    //zprobe_zoffset = -4.0;
+    //Config_StoreSettings();
+    //enqueue_and_echo_commands_P(PSTR("G28")); //origine auto
+    //lcd_move_z();
+
+    MENU_ITEM_EDIT_CALLBACK(float32, MSG_ZPROBE_ZOFFSET, &zprobe_zoffset, Z_PROBE_OFFSET_RANGE_MIN, Z_PROBE_OFFSET_RANGE_MAX, lcd_set_z_offsets_save_config);
+
+    END_MENU();
+  }
+
+  #endif
+
   void lcd_move_menu() {
     START_MENU();
     MENU_BACK(MSG_PREPARE);
@@ -2284,7 +2427,7 @@ void kill_screen(const char* lcd_msg) {
     //
     // Fan Speed:
     //
-    #if FAN_COUNT > 0
+    #if (FAN_COUNT > 0) && (DISABLED (IS_MONO_FAN))
       #if HAS_FAN0
         #if FAN_COUNT > 1
           #define MSG_1ST_FAN_SPEED MSG_FAN_SPEED " 1"
