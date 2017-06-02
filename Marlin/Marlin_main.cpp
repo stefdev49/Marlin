@@ -845,6 +845,29 @@ static bool drain_injected_commands_P() {
 }
 
 /**
+ * Test for all enqueued commands to be processed.
+ * return false if it remains command, true when all commands are done
+ */
+bool enqueued_commands_finished__CALLABLE_FROM_LCD_ONLY() {
+  if ( commands_in_queue > 0) {
+    process_next_command();
+    cmd_queue_index_r = (cmd_queue_index_r + 1) % BUFSIZE;
+    commands_in_queue--;
+    return false;
+  }
+  return true;
+}
+
+/**
+ * Wait for all enqueued commands to be processed.
+ */
+void wait_all_commands_finished__CALLABLE_FROM_LCD_ONLY() {
+  while (!enqueued_commands_finished__CALLABLE_FROM_LCD_ONLY()) {
+    idle();
+  }
+}
+
+/**
  * Record one or many commands to run from program memory.
  * Aborts the current queue, if any.
  * Note: drain_injected_commands_P() must be called repeatedly to drain the commands afterwards
@@ -980,6 +1003,16 @@ void servo_init() {
     OUT_WRITE(STEPPER_RESET_PIN, LOW);  // drive it down to hold in reset motor driver chips
   }
   void enableStepperDrivers() { SET_INPUT(STEPPER_RESET_PIN); }  // set to input, which allows it to be pulled high by pullups
+#endif
+
+#if ENABLED(ONE_LED)
+  inline void one_led_on() {
+    digitalWrite( ONE_LED_PIN, true ^ ONE_LED_INVERTING );
+  }
+
+  inline void one_led_off() {
+    digitalWrite( ONE_LED_PIN, false ^ ONE_LED_INVERTING );
+  }
 #endif
 
 #if ENABLED(EXPERIMENTAL_I2CBUS) && I2C_SLAVE_ADDRESS > 0
@@ -12305,6 +12338,105 @@ void setup() {
   #if PIN_EXISTS(STAT_LED_BLUE)
     OUT_WRITE(STAT_LED_BLUE_PIN, LOW); // turn it off
   #endif
+
+  #if ENABLED(USE_SECOND_SERIAL)
+    SECOND_SERIAL.begin( SECOND_SERIAL_BAUDRATE );
+  #endif
+
+  #if ENABLED(SUMMON_PRINT_PAUSE) && SUMMON_PRINT_PAUSE_PIN != X_MIN_PIN && SUMMON_PRINT_PAUSE_PIN != Y_MAX_PIN && SUMMON_PRINT_PAUSE_PIN != Z_MIN_PIN
+    SET_INPUT(SUMMON_PRINT_PAUSE_PIN);
+    WRITE(SUMMON_PRINT_PAUSE_PIN, HIGH);
+
+    #if ENABLED(FILAMENT_RUNOUT_SENSOR)
+      delay( 100 );
+      if ( READ( SUMMON_PRINT_PAUSE_PIN ) ^ SUMMON_PRINT_PAUSE_INVERTING ) {
+          filrunout_bypassed = true;
+          SERIAL_ECHOLN( PSTR("Filament sensor bypassed") );
+      }
+    #endif
+  #elif ENABLED(ONE_BUTTON)
+    SET_INPUT(ONE_BUTTON_PIN);
+    WRITE(ONE_BUTTON_PIN, HIGH);
+  #endif
+
+  #if ENABLED(PRINTER_HEAD_EASY)
+    SET_OUTPUT(PRINTER_HEAD_EASY_CONSTANT_FAN_PIN);
+    WRITE(PRINTER_HEAD_EASY_CONSTANT_FAN_PIN, LOW);
+  #endif
+
+  #if ENABLED( DELTA_EXTRA )
+    #if ENABLED( ONE_BUTTON )
+      // Read the button state here
+      millis_t now = millis();
+      millis_t timeout = now + 2500UL;
+      do {
+         now = millis();
+         delay( 100 );
+      } while( ( READ( SUMMON_PRINT_PAUSE_PIN ) ^ SUMMON_PRINT_PAUSE_INVERTING ) && PENDING( now, timeout ) );
+      if ( ELAPSED( now, timeout ) ) {
+        startup_auto_calibration = true;
+        enqueue_and_echo_commands_P( PSTR("D851") );
+      }
+      else {
+        enqueue_and_echo_commands_P( PSTR("G28\nM106 S255") );
+      }
+    #endif
+  #endif
+
+  #if ENABLED(ONE_LED)
+    pinMode( ONE_LED_PIN, OUTPUT );
+    one_led_off();
+  #endif
+
+  #if ENABLED(WIFI_PRINT)
+    unsigned long last_status_timestamp = 0;
+    void manage_second_serial_status() {
+      if ( millis() - last_status_timestamp > 10000 ) {
+        SECOND_SERIAL.print( "STAT:" );
+
+        SECOND_SERIAL.print( "tstp:" );
+        SECOND_SERIAL.print(  millis()  );
+
+        SECOND_SERIAL.print( " X:" );
+        SECOND_SERIAL.print( current_position[X_AXIS] );
+        SECOND_SERIAL.print( " Y:" );
+        SECOND_SERIAL.print( current_position[Y_AXIS] );
+        SECOND_SERIAL.print( " Z:" );
+        SECOND_SERIAL.print( current_position[Z_AXIS] );
+        SECOND_SERIAL.print( " E:" );
+        SECOND_SERIAL.print( current_position[E_AXIS] );
+
+        #if HAS_TEMP_HOTEND
+          SECOND_SERIAL.print( " TC:" );
+          SECOND_SERIAL.print( degHotend(target_extruder), 1 );
+          SECOND_SERIAL.print( " TT:" );
+          SECOND_SERIAL.print( degTargetHotend(target_extruder), 1 );
+        #endif
+        #if HAS_TEMP_BED
+          SECOND_SERIAL.print( " BC:" );
+          SECOND_SERIAL.print( degBed(), 1 );
+          SECOND_SERIAL.print( " BT:" );
+          SECOND_SERIAL.print( degTargetBed(), 1 );
+        #endif
+
+        #if ENABLED(SDSUPPORT)
+          SECOND_SERIAL.print( " SD_OK:" );
+          SECOND_SERIAL.print( card.cardOK );
+
+          SECOND_SERIAL.print( " SD_PRINTING:" );
+          SECOND_SERIAL.print( card.sdprinting );
+
+          SECOND_SERIAL.print( " SD_PROGRESS:" );
+          SECOND_SERIAL.print( card.percentDone() );
+        #endif
+
+        SECOND_SERIAL.println();
+
+        last_status_timestamp = millis();
+      }
+    }
+
+  #endif // END WIFI_PRINT
 
   #if ENABLED(RGB_LED) || ENABLED(RGBW_LED)
     SET_OUTPUT(RGB_LED_R_PIN);
