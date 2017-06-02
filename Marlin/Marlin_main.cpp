@@ -1094,6 +1094,19 @@ inline void get_serial_commands() {
   /**
    * Loop while serial characters are incoming and the queue is not full
    */
+   #if ENABLED(WIFI_PRINT)
+     // TODO STEF : the loop has changed a lot, see below non wifi print case
+     while (commands_in_queue < BUFSIZE && (MYSERIAL.available() > 0 || SECOND_SERIAL.available() > 0 )) {
+
+     char serial_char;
+     if ( SECOND_SERIAL.available() > 0 ) {
+       serial_char = SECOND_SERIAL.read();
+     }
+     else {
+       serial_char = MYSERIAL.read();
+     }
+
+   #else // ELSE WIFI_PRINT
   while (commands_in_queue < BUFSIZE && MYSERIAL.available() > 0) {
 
     char serial_char = MYSERIAL.read();
@@ -1209,6 +1222,7 @@ inline void get_serial_commands() {
     }
 
   } // queue has space, serial has data
+  #endif // END WIFI_PRINT
 }
 
 #if ENABLED(SDSUPPORT)
@@ -12496,9 +12510,14 @@ void setup() {
  *  - Call LCD update
  */
 void loop() {
+
+  #if ENABLED(WIFI_PRINT)
+    manage_second_serial_status();
+  #endif
+
   if (commands_in_queue < BUFSIZE) get_available_commands();
 
-  #if ENABLED(SDSUPPORT)
+  #if ENABLED(SDSUPPORT) && DISABLED(ONE_BUTTON)
     card.checkautostart(false);
   #endif
 
