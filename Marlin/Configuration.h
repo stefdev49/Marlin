@@ -41,8 +41,10 @@
 #include "boards.h"
 #include "macros.h"
 
+#define DISABLE_DAGAUTO_START
+#define START_BMPHIGH
 #define FILAMENTCHANGE_FEEDRATE_MULTIPLICATOR 5.0
-#define NO_LCD_FOR_FILAMENTCHANGEABLE
+//#define NO_LCD_FOR_FILAMENTCHANGEABLE
 #define PRINTER_HEAD_EASY_CONSTANT_FAN_MIN_TEMP 50
 #define PRINTER_HEAD_EASY
 //===========================================================================
@@ -943,7 +945,7 @@ const bool Z_MIN_PROBE_ENDSTOP_INVERTING = false; // set to true to invert the l
 // RepRapDiscount FULL GRAPHIC Smart Controller
 // http://reprap.org/wiki/RepRapDiscount_Full_Graphic_Smart_Controller
 //
-//#define REPRAP_DISCOUNT_FULL_GRAPHIC_SMART_CONTROLLER
+#define REPRAP_DISCOUNT_FULL_GRAPHIC_SMART_CONTROLLER
 
 //
 // MakerLab Mini Panel with graphic
