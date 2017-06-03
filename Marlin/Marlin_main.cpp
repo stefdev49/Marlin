@@ -1307,7 +1307,7 @@ inline void get_serial_commands() {
 
           _commit_command(false);
         }
-        
+
         if (card_eof) {
           SERIAL_PROTOCOLLNPGM(MSG_FILE_PRINTED);
           card.printingHasFinished();
@@ -1321,7 +1321,9 @@ inline void get_serial_commands() {
             #endif
             set_led_color(0, 0, 0);   // OFF
           #endif
+          #if DISABLED(ONE_BUTTON)
           card.checkautostart(true);
+          #endif
         }
         else if (n == -1) {
           SERIAL_ERROR_START;
