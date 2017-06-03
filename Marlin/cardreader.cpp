@@ -49,6 +49,10 @@ CardReader::CardReader() {
   #endif //SDPOWER
 
   next_autostart_ms = millis() + 5000;
+
+  #if ENABLED(ONE_BUTTON)
+  last_autoconsume_idx = -1;
+  #endif
 }
 
 char *createFilename(char *buffer, const dir_t &p) { //buffer > 12characters
@@ -507,7 +511,42 @@ void CardReader::write_command(char *buf) {
   }
 }
 
+#if ENABLED( DELTA_EXTRA )
+bool CardReader::writePGM(const char *bufPGM) {
+  char msg[64];
+  strncpy_P(msg, bufPGM, sizeof(msg) - 1);
+  file.writeError = false;
+  file.write( msg );
+  file.write( '\r' );
+  file.write( '\n' );
+  return !file.writeError;
+}
+
+bool CardReader::stillPluggedIn() {
+  // Jump to end of file, to avoid SdFile 'cluster' block cache
+  // TODO: do it better
+  //       (e.g: when we will be in the last 'cluster' block as sd_curpos)
+  //       (     peek will not fail baecause already in cache)
+  if ( ! file.seekEnd( -1 ) ) {
+    return false;
+  }
+
+  if ( file.peek() < 0 ) {
+    return false;
+  }
+
+  // Jump back to where we were
+  if ( ! file.seekSet(sdpos) ) {
+    return false;
+  }
+
+  return true;
+}
+#endif
+
 void CardReader::checkautostart(bool force) {
+
+
   if (!force && (!autostart_stilltocheck || ELAPSED(millis(), next_autostart_ms)))
     return;
 
@@ -518,8 +557,16 @@ void CardReader::checkautostart(bool force) {
     if (!cardOK) return; // fail
   }
 
+  #if ENABLED(ONE_BUTTON)
+  if (check_auto_consume()) return;
+  #endif
+
   char autoname[10];
-  sprintf_P(autoname, PSTR("auto%i.g"), autostart_index);
+  #if ENABLED(DISABLE_DAGAUTO_START)
+    sprintf_P(autoname, PSTR("auto%i.g"), autostart_index);
+  #else
+    sprintf_P(autoname, PSTR("dagoma%i.g"), autostart_index);
+  #endif
   for (int8_t i = 0; i < (int8_t)strlen(autoname); i++) autoname[i] = tolower(autoname[i]);
 
   dir_t p;
@@ -529,16 +576,61 @@ void CardReader::checkautostart(bool force) {
   bool found = false;
   while (root.readDir(p, NULL) > 0) {
     for (int8_t i = 0; i < (int8_t)strlen((char*)p.name); i++) p.name[i] = tolower(p.name[i]);
-    if (p.name[9] != '~' && strncmp((char*)p.name, autoname, 5) == 0) {
-      openAndPrintFile(autoname);
-      found = true;
-    }
+      #if ENABLED(DISABLE_DAGAUTO_START)
+        if (p.name[9] != '~' && strncmp((char*)p.name, autoname, 5) == 0) {
+      #else
+        if (p.name[9] != '~' && strncmp((char*)p.name, autoname, 7) == 0) {
+      #endif
+          openAndPrintFile(autoname);
+          found = true;
+        }
   }
   if (!found)
     autostart_index = -1;
   else
     autostart_index++;
 }
+
+#if ENABLED(ONE_BUTTON)
+bool CardReader::check_auto_consume() {
+  dir_t p;
+
+  root.rewind();
+
+  int highestIdx = -1;
+  last_autoconsume_idx = -1;
+
+  // Detected scheme : _XY.g
+  // Where X and Y are digits
+  while (root.readDir(p, NULL) > 0) {
+    if (
+      p.name[0] != '_' ||
+      (! isDigit(p.name[1])) ||
+      (! isDigit(p.name[2])) ||
+      p.name[3] != ' ' ||
+      p.name[7] != ' ' ||
+      (p.name[8] != 'g' && p.name[8] != 'G')
+    ) continue;
+    // Convert to int
+    int curIdx = ( p.name[1] - 48 ) * 10 + ( p.name[2] - 48 );
+    if (curIdx > highestIdx) {
+      highestIdx = curIdx;
+    }
+  }
+
+  if ( highestIdx == -1 ) {
+    return false;
+  }
+
+  char autoname[10];
+  sprintf_P(autoname, PSTR("_%02i.g"), highestIdx);
+  
+  openAndPrintFile( autoname );
+  last_autoconsume_idx = highestIdx;
+
+  return true;
+}
+#endif
 
 void CardReader::closefile(bool store_location) {
   file.sync();
@@ -610,6 +702,14 @@ void CardReader::printingHasFinished() {
     if (SD_FINISHED_STEPPERRELEASE)
       enqueue_and_echo_commands_P(PSTR(SD_FINISHED_RELEASECOMMAND));
     autotempShutdown();
+    #if ENABLED(ONE_BUTTON)
+      if (last_autoconsume_idx > -1) {
+        char autoname[10];
+        sprintf_P(autoname, PSTR("_%02i.g"), last_autoconsume_idx);
+        removeFile( autoname );
+        last_autoconsume_idx = -1;
+      }
+    #endif
   }
 }
 
