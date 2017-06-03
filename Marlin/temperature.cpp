@@ -1389,6 +1389,71 @@ static void set_current_temp_raw() {
 
 #if ENABLED( Z_MIN_MAGIC )
   bool can_measure_z_magic = false;
+  static unsigned long raw_z_magic_value = 0;
+
+  #define Z_MAGIC_LAST_MEASURES_NUMBER 5
+  volatile float z_magic_last_measures[Z_MAGIC_LAST_MEASURES_NUMBER] = { 0.0 };
+  volatile float z_magic_last_measures_avg = 0.0 ;
+  volatile int z_magic_last_measures_idx = 0;
+  float z_magic_derivative_bias = 0.0;
+
+  #define Z_MAGIC_DERIVATIVE_BIAS_THRESHOLD (8.0)
+  #define Z_MAGIC_MIN_ELASTICITY_RESPONSE_MILLIS 50UL
+  #define Z_MAGIC_MAX_ELASTICITY_RESPONSE_MILLIS 80UL
+  #define Z_MAGIC_EDGE_DELAY_MILLIS 150UL
+  #define Z_MAGIC_HIT_DELAY_MILLIS 500UL
+  millis_t z_magic_elasticity_min_timeout = 0UL;
+  millis_t z_magic_elasticity_max_timeout = 0UL;
+  millis_t z_magic_hit_timeout = 0UL;
+  millis_t z_magic_tap_timeout = 0UL;
+  
+  int z_magic_value = 0;
+  int z_magic_hit_count = 0;
+
+inline void update_z_magic( ) {
+
+  raw_z_magic_value = ADC;
+  z_magic_value = raw_z_magic_value;
+
+  float z_magic_f = float( z_magic_value );
+
+  millis_t now = millis();
+
+  z_magic_derivative_bias = ( z_magic_f - z_magic_last_measures_avg ) / 2.0;
+
+  if ( ELAPSED(now, z_magic_hit_timeout) ) {
+    if ( z_magic_derivative_bias < -Z_MAGIC_DERIVATIVE_BIAS_THRESHOLD ) {
+      z_magic_hit_timeout = now + Z_MAGIC_EDGE_DELAY_MILLIS;
+      z_magic_elasticity_max_timeout = now + Z_MAGIC_MAX_ELASTICITY_RESPONSE_MILLIS;
+    }
+  }
+
+  if ( PENDING(now, z_magic_elasticity_max_timeout) ) {
+    if ( ELAPSED(now, z_magic_elasticity_min_timeout) ) {
+      if ( z_magic_derivative_bias > Z_MAGIC_DERIVATIVE_BIAS_THRESHOLD ) {
+        z_magic_elasticity_min_timeout = now + Z_MAGIC_EDGE_DELAY_MILLIS;
+        z_magic_tap_timeout = now + Z_MAGIC_HIT_DELAY_MILLIS;
+        z_magic_hit_count += 1;
+      }
+    }
+  }
+
+  if (ELAPSED(now, z_magic_tap_timeout)) {
+    z_magic_hit_count = 0;
+  }
+  
+
+  // Update last_measures avg
+  z_magic_last_measures[ z_magic_last_measures_idx ] = z_magic_f;
+  z_magic_last_measures_idx = ( z_magic_last_measures_idx + 1 ) % Z_MAGIC_LAST_MEASURES_NUMBER;
+
+  z_magic_last_measures_avg = z_magic_last_measures[0];
+  for( int i=1; i<Z_MAGIC_LAST_MEASURES_NUMBER; i++ ) {
+    z_magic_last_measures_avg += z_magic_last_measures[ i ];
+  }
+  z_magic_last_measures_avg /= float( Z_MAGIC_LAST_MEASURES_NUMBER );
+}
+
 #endif
 
 /**
@@ -1669,6 +1734,7 @@ ISR(TIMER0_COMPB_vect) {
       temp_state = MeasureTemp_BED;
       #if ENABLED( Z_MIN_MAGIC )
         can_measure_z_magic = true;
+        START_ADC(15);
       #endif
       break;
     case MeasureTemp_BED:
@@ -1678,6 +1744,7 @@ ISR(TIMER0_COMPB_vect) {
       temp_state = PrepareTemp_1;
       #if ENABLED( Z_MIN_MAGIC )
         can_measure_z_magic = true;
+        update_z_magic();
       #endif
       break;
 
@@ -1687,6 +1754,10 @@ ISR(TIMER0_COMPB_vect) {
       #endif
       lcd_buttons_update();
       temp_state = MeasureTemp_1;
+      #if ENABLED( Z_MIN_MAGIC )
+        can_measure_z_magic = true;
+        START_ADC(15);
+      #endif
       break;
     case MeasureTemp_1:
       #if HAS_TEMP_1
@@ -1695,6 +1766,7 @@ ISR(TIMER0_COMPB_vect) {
       temp_state = PrepareTemp_2;
       #if ENABLED( Z_MIN_MAGIC )
         can_measure_z_magic = true;
+        update_z_magic();
       #endif
       break;
 
@@ -1706,6 +1778,7 @@ ISR(TIMER0_COMPB_vect) {
       temp_state = MeasureTemp_2;
       #if ENABLED( Z_MIN_MAGIC )
         can_measure_z_magic = true;
+        START_ADC(15);
       #endif
       break;
     case MeasureTemp_2:
@@ -1715,6 +1788,7 @@ ISR(TIMER0_COMPB_vect) {
       temp_state = PrepareTemp_3;
       #if ENABLED( Z_MIN_MAGIC )
         can_measure_z_magic = true;
+        update_z_magic();
       #endif
       break;
 
@@ -1726,6 +1800,7 @@ ISR(TIMER0_COMPB_vect) {
       temp_state = MeasureTemp_3;
       #if ENABLED( Z_MIN_MAGIC )
         can_measure_z_magic = true;
+        START_ADC(15);
       #endif
       break;
     case MeasureTemp_3:
@@ -1735,6 +1810,7 @@ ISR(TIMER0_COMPB_vect) {
       temp_state = Prepare_FILWIDTH;
       #if ENABLED( Z_MIN_MAGIC )
         can_measure_z_magic = true;
+        update_z_magic();
       #endif
       break;
 
@@ -1746,6 +1822,7 @@ ISR(TIMER0_COMPB_vect) {
       temp_state = Measure_FILWIDTH;
       #if ENABLED( Z_MIN_MAGIC )
         can_measure_z_magic = true;
+        START_ADC(15);
       #endif
       break;
     case Measure_FILWIDTH:
@@ -1760,6 +1837,7 @@ ISR(TIMER0_COMPB_vect) {
       temp_count++;
       #if ENABLED( Z_MIN_MAGIC )
         can_measure_z_magic = true;
+        update_z_magic();
       #endif
       break;
 

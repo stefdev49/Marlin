@@ -422,6 +422,8 @@ static uint8_t target_extruder;
   float delta[3] = { 0 };
   #define SIN_60 0.8660254037844386
   #define COS_60 0.5
+  #define SIN_30 COS_60
+  #define COS_30 SIN_60
   float endstop_adj[3] = { 0 };
   // these are the default values, can be overriden with M665
   float delta_radius = DELTA_RADIUS;
@@ -476,6 +478,8 @@ static uint8_t target_extruder;
 
 #if ENABLED(FILAMENT_RUNOUT_SENSOR)
   static bool filament_ran_out = false;
+  const millis_t FRS_DEBOUNCE_DELAY = 250UL; // filament runout sensor delay
+  static millis_t frs_debounce_time = 0UL; // filament runout sensor debouncing count
 #endif
 #if ENABLED(SUMMON_PRINT_PAUSE)
   static bool print_pause_summoned = false;
@@ -968,7 +972,7 @@ void setup() {
         enqueue_and_echo_commands_P( PSTR("D851") );
       }
       else {
-        enqueue_and_echo_commands_P( PSTR("G28") );
+        enqueue_and_echo_commands_P( PSTR("G28\nM106 S255") );
       }
     #endif
   #endif
@@ -1781,7 +1785,37 @@ static void setup_for_endstop_move() {
 
   #endif // !AUTO_BED_LEVELING_GRID
 
-  static void run_z_probe() {
+  // Check if pause is triggered during G29 (manuel bed leveling) and D851 (custom calibration)
+  #if ENABLED(EMERGENCY_STOP)
+    void handle_emergency_stop(){
+      if ( trigger_emergency_stop ) {
+        // Abort current operations:
+        // - Move the nozzle up
+        #if ENABLED(EMERGENCY_STOP_Z_MOVE)
+          // Setting the current_position seems useless as the move is stopped by resetting...?
+          //current_position[Z_AXIS] += 5;
+          feedrate = homing_feedrate[Z_AXIS];
+          #if ENABLED(DELTA)
+            calculate_delta(current_position);
+            plan_buffer_line(delta[X_AXIS], delta[Y_AXIS], delta[Z_AXIS], current_position[E_AXIS], feedrate / 60, active_extruder);
+          #else
+            line_to_current_position();
+          #endif
+        #endif
+        // - Reset the board
+        while( true ) {
+          #if ENABLED(ONE_LED)
+            one_led_on();
+            delay(150);
+            one_led_off();
+          #endif
+          delay(150);
+        }
+      }
+    }
+  #endif
+
+  static void run_z_probe(bool fast=false) {
 
     /**
      * To prevent stepper_inactive_time from running out and
@@ -1799,10 +1833,22 @@ static void setup_for_endstop_move() {
       #endif
 
       // move down slowly until you find the bed
-      feedrate = homing_feedrate[Z_AXIS] / 4;
+      #if ENABLED(DELTA_EXTRA)
+        if (fast) {
+          feedrate = homing_feedrate[Z_AXIS] / 2;
+        }
+        else {
+      #endif
+          feedrate = homing_feedrate[Z_AXIS] / 4;
+      #if ENABLED(DELTA_EXTRA)
+        }
+      #endif
       destination[Z_AXIS] = -20;
       prepare_move_raw(); // this will also set_current_to_destination
       st_synchronize();
+      #if ENABLED(EMERGENCY_STOP)
+        handle_emergency_stop();
+      #endif
       endstops_hit_on_purpose(); // clear endstop hit flags
 
       /**
@@ -1820,6 +1866,9 @@ static void setup_for_endstop_move() {
       sync_plan_position_delta();
 
     #else // !DELTA
+      #if ENABLED(DEBUG_LEVELING_FEATURE)
+        SERIAL_ECHOLN("run_z_probe (DISCO)");
+      #endif
 
       plan_bed_level_matrix.set_to_identity();
       feedrate = homing_feedrate[Z_AXIS];
@@ -1828,6 +1877,9 @@ static void setup_for_endstop_move() {
       float zPosition = -(Z_MAX_LENGTH + 10);
       line_to_z(zPosition);
       st_synchronize();
+      #if ENABLED(EMERGENCY_STOP)
+        handle_emergency_stop();
+      #endif
 
       // Tell the planner where we ended up - Get this from the stepper handler
       zPosition = st_get_axis_position_mm(Z_AXIS);
@@ -1840,6 +1892,9 @@ static void setup_for_endstop_move() {
       zPosition += home_bump_mm(Z_AXIS);
       line_to_z(zPosition);
       st_synchronize();
+      #if ENABLED(EMERGENCY_STOP)
+        handle_emergency_stop();
+      #endif
       endstops_hit_on_purpose(); // clear endstop hit flags
 
       // move back down slowly to find bed
@@ -1848,6 +1903,9 @@ static void setup_for_endstop_move() {
       zPosition -= home_bump_mm(Z_AXIS) * 2;
       line_to_z(zPosition);
       st_synchronize();
+      #if ENABLED(EMERGENCY_STOP)
+        handle_emergency_stop();
+      #endif
       endstops_hit_on_purpose(); // clear endstop hit flags
 
       // Get the current stepper position after bumping an endstop
@@ -3322,45 +3380,172 @@ inline void gcode_G28() {
 
   #if ENABLED( DELTA_EXTRA )
 
-    #if ENABLED( TRI_SHAPE_PROBING )
-      float probe_point_XY_x = (delta_tower1_x + delta_tower2_x ) / 2.0;
-      float probe_point_XY_y = (delta_tower1_y + delta_tower2_y ) / 2.0;
+    #define PROBE_POINT_NUMBER 19 // 12 outer, 6 inner, 1 center
+    // Numbered from X tower cardinal axis,
+    // from outside to center
+    // Contains constant X,Y probe point,
+    // thrid and last float room will contain probed altitude
+    float probe_plan[PROBE_POINT_NUMBER][3] = {
+      // Outer
+      {
+        delta_tower1_x,
+        delta_tower1_y,
+        0.0
+      },
+      {
+        -COS_60 * delta_radius,
+        -SIN_60 * delta_radius,
+        0.0
+      },
+      {
+        0.0,
+        -1.0 * delta_radius,
+        0.0
+      },
+      {
+        COS_60 * delta_radius,
+        -SIN_60 * delta_radius,
+        0.0
+      },
+      {
+        delta_tower2_x,
+        delta_tower2_y,
+        0.0
+      },
+      {
+        delta_radius,
+        0.0,
+        0.0
+      },
+      {
+        SIN_60 * delta_radius,
+        COS_60 * delta_radius,
+        0.0
+      },
+      {
+        COS_60 * delta_radius,
+        SIN_60 * delta_radius,
+        0.0
+      },
+      {
+        delta_tower3_x,
+        delta_tower3_y,
+        0.0
+      },
+      {
+        -COS_60 * delta_radius,
+        SIN_60 * delta_radius,
+        0.0
+      },
+      {
+        -SIN_60 * delta_radius,
+        COS_60 * delta_radius,
+        0.0
+      },
+      {
+        -delta_radius,
+        0.0,
+        0.0
+      },
+      // Inner
+      {
+        -SIN_60 * delta_radius / 2.0,
+        -COS_60 * delta_radius / 2.0,
+        0.0
+      },
+      {
+        0.0,
+        -delta_radius / 2.0,
+        0.0
+      },
+      {
+        SIN_60 * delta_radius / 2.0,
+        -COS_60 * delta_radius / 2.0,
+        0.0
+      },
+      {
+        SIN_60 * delta_radius / 2.0,
+        COS_60 * delta_radius / 2.0,
+        0.0
+      },
+      {
+        0.0,
+        delta_radius / 2.0,
+        0.0
+      },
+      {
+        -SIN_60 * delta_radius / 2.0,
+         COS_60 * delta_radius / 2.0,
+        0.0
+      },
+      // Center
+      {
+        0.0,
+        0.0,
+        0.0
+      }
+    };
 
-      float probe_point_YZ_x = (delta_tower2_x + delta_tower3_x ) / 2.0;
-      float probe_point_YZ_y = (delta_tower2_y + delta_tower3_y ) / 2.0;
-
-      float probe_point_ZX_x = (delta_tower3_x + delta_tower1_x ) / 2.0;
-      float probe_point_ZX_y = (delta_tower3_y + delta_tower1_y ) / 2.0;
-    #else
-      float probe_point_XY_x =  0.0;
-      float probe_point_XY_y =  -1.0 * delta_radius;
-
-      float probe_point_YZ_x =  SIN_60 * delta_radius;
-      float probe_point_YZ_y =  COS_60 * delta_radius;
-
-      float probe_point_ZX_x = -SIN_60 * delta_radius;
-      float probe_point_ZX_y =  COS_60 * delta_radius;
-    #endif
+    // As probe_plan above,
+    // numbered from X tower cardinal axis
+    // From outside to center
+    #define PROBE_MESH_NUMBER 24
+    const short probe_plan_mesh[PROBE_MESH_NUMBER][3] = {
+      // Outer (one side outer) (12)
+      { 0, 1, 12 },
+      { 1, 2, 13 },
+      { 2, 3, 13 },
+      { 3, 4, 14 },
+      { 4, 5, 14 },
+      { 5, 6, 15 },
+      { 7, 6, 15 },
+      { 7, 8, 16 },
+      { 8, 9, 16 },
+      { 9, 10, 17 },
+      { 10, 11, 17 },
+      { 11, 0, 12 },
+      // Outer (one point outer) (6)
+      { 1, 13, 12 },
+      { 3, 14, 13 },
+      { 5, 15, 14 },
+      { 7, 16, 15 },
+      { 9, 17, 16 },
+      { 11, 12, 17 },
+      // Inner (6)
+      { 12, 13, 18 },
+      { 13, 14, 18 },
+      { 14, 15, 18 },
+      { 15, 16, 18 },
+      { 16, 17, 18 },
+      { 17, 12, 18 }
+    };
 
     // Predefine used functions
     inline void gcode_M500();
     inline void gcode_M665();
-    inline void gcode_G30();
+    inline void gcode_G30(bool fast=false);
 
-    inline float get_probed_Z_avg() {
+    #define Z_AVG_TOLERANCE 0.02
+
+    inline float get_probed_Z_avg(bool fast=false) {
 
       bool all_points_are_good = false;
       float z_read[3] = { 50.0 };
       float z_avg = 0.0;
 
       do {
-        gcode_G30();
+        gcode_G30(fast);
 
         z_read[2] = z_read[1];
         z_read[1] = z_read[0];
         z_read[0] = current_position[Z_AXIS];
 
-        z_avg = ( z_read[0] + z_read[1] + z_read[2] ) / 3.0;
+        if (fast) {
+          z_avg = ( z_read[0] + z_read[1] ) / 2.0;
+        }
+        else {
+          z_avg = ( z_read[0] + z_read[1] + z_read[2] ) / 3.0;
+        }
 
         set_destination_to_current();
         destination[ Z_AXIS ] = min( 50.0, destination[ Z_AXIS ] + 5.0 );
@@ -3374,9 +3559,9 @@ inline void gcode_G28() {
         else {
           // Check for all points
           all_points_are_good =
-            abs(z_read[0] - z_avg) < 0.05 &&
-            abs(z_read[1] - z_avg) < 0.05 &&
-            abs(z_read[2] - z_avg) < 0.05;
+            abs(z_read[0] - z_avg) < Z_AVG_TOLERANCE &&
+            abs(z_read[1] - z_avg) < Z_AVG_TOLERANCE &&
+            abs(z_read[2] - z_avg) < Z_AVG_TOLERANCE;
         }
 
       } while( !all_points_are_good );
@@ -3399,143 +3584,213 @@ inline void gcode_G28() {
      *  T1       XY        T2
      */
 
+    float triangle_sign(const float x, const float y, const short p1, const short p2) {
+      return 
+        (x - probe_plan[p2][0]) * (probe_plan[p1][1] - probe_plan[p2][1]) -
+        (probe_plan[p1][0] - probe_plan[p2][0]) * (y - probe_plan[p2][1]);
+    }
+
+    bool triangle_contains(const float x, const float y, const short t) {
+      bool b1, b2, b3;
+
+      const short *triangle;
+      triangle = probe_plan_mesh[t];
+
+      b1 = triangle_sign(x, y, triangle[0], triangle[1]) <= 0.0;
+      b2 = triangle_sign(x, y, triangle[1], triangle[2]) <= 0.0;
+      b3 = triangle_sign(x, y, triangle[2], triangle[0]) <= 0.0;
+
+      return ((b1 == b2) && (b2 == b3));
+    }
+
+    #define PROBE_REGION_NUMBER 12
+    const short probe_plan_triangle_mesh_region[PROBE_REGION_NUMBER][4] = {
+      { 18, 12, 0 },
+      { 18, 12, 1 },
+      { 19, 13, 2 },
+      { 19, 13, 3 },
+      { 20, 14, 4 },
+      { 20, 14, 5 },
+      { 21, 15, 6 },
+      { 21, 15, 7 },
+      { 22, 16, 8 },
+      { 22, 16, 9 },
+      { 23, 17, 10 },
+      { 23, 17, 11 }
+    };
+
     // TODO: Move it to the right place
     // WHERE: on calculate_delta parameters ?
     // 'CAUSE: these values are fixed against delta R
-    float precalc_probed_tri_aref[4] = { 0.0, 0.0, 0.0, 0.0 };
+    float precalc_probe_plan_region_aref[8] = { 0.0 };
 
-    inline int triangle_index( const float x, const float y ) {
+    inline short triangle_index_in_region( const float x, const float y, const short r ) {
+      const short *region;
+      region = probe_plan_triangle_mesh_region[r];
+
+      if ( triangle_contains(x, y, region[0]) ) return region[0];
+      if ( triangle_contains(x, y, region[1]) ) return region[1];
+
+      return region[2];
+    };
+
+    inline short region_index( const float x, const float y ) {
 
       // While all tri equations are just: y = a.x;
       float aTested = y / x;
 
-      // Test to choice between 2 tri groups: 1,2,3 or 0,4,5
+      // Simple test to choice between 2 region groups: 2,3,4,5,6,7 or 8,9,10,11,0,1
       if ( x >= 0.0 ) {
-        // Index is one of 1, 2 or 3
-
-        // Test for tri idx 1 or 2,3
-        // aRef = delta_tower2_y / delta_tower2_x;
-        if ( aTested > precalc_probed_tri_aref[ 0 ] ) {
-          // Idx is one of 2 or 3
-          // Test for tri 2 or 3
-          // aRef = probe_point_YZ_y / probe_point_YZ_x;
-          if ( aTested > precalc_probed_tri_aref[ 1 ] ) {
-            return 3;
+        // Region is one of 2,3,4,5,6,7
+ 
+        // Simple test to choice between 2 sub region groups: 5,6,7 or 2,3,4
+        if (y >= 0.0 ) {
+          // Region is one of 5,6,7
+          if ( aTested > precalc_probe_plan_region_aref[4] ) {
+            // Region is one of 6, 7
+            if ( aTested > precalc_probe_plan_region_aref[5] ) {
+              return 7;
+            }
+            else {
+              return 6;
+            }
+          }
+          else {
+            return 5;
+          }
+        }
+        else {
+          // Region is one of 2,3,4
+          if ( aTested > precalc_probe_plan_region_aref[2] ) {
+            // Region is one of 3,4
+            if ( aTested > precalc_probe_plan_region_aref[3] ) {
+              return 4;
+            }
+            else {
+              return 3;
+            }
           }
           else {
             return 2;
           }
         }
-        else {
-          return 1;
-        }
       }
       else {
-        // Index is one of 0, 4 or 5
-        // Test for tri idx 0 or 4,5
-        // aRef = delta_tower1_y / delta_tower1_x;
-        if ( aTested > precalc_probed_tri_aref[ 2 ] ) {
-          return 0;
-        }
-        else {
-          // Index is one of 4 or 5
-          // Test for tri 4 or 5
-          // aRef = probe_point_ZX_y / probe_point_ZX_x;
-          if ( aTested > precalc_probed_tri_aref[ 3 ] ) {
-            return 5;
+        // Region is one of 8,9,10,11,0,1
+ 
+        // Simple test to choice between 2 sub region groups: 8,9,10 or 11,0,1
+        if (y >= 0.0 ) {
+          // Region is one of 8,9,10
+          if ( aTested > precalc_probe_plan_region_aref[6] ) {
+            // Region is one of 9,10
+            if ( aTested > precalc_probe_plan_region_aref[7] ) {
+              return 10;
+            }
+            else {
+              return 9;
+            }
           }
           else {
-            return 4;
+            return 8;
+          }
+        }
+        else {
+          // Region is one of 11,0,1
+          if ( aTested > precalc_probe_plan_region_aref[0] ) {
+            // Region is one of 0,1
+            if ( aTested > precalc_probe_plan_region_aref[1] ) {
+              return 1;
+            }
+            else {
+              return 0;
+            }
+          }
+          else {
+            return 11;
           }
         }
       }
 
-      // It's an error
-      return -1;
+      // At this point, it's an error
+      // but do not mess up print with 'index out of bound'
+      return 0;
     }
 
-    float probed_tri_altitude[7] = { 42.0, 42.0, 42.0, 42.0, 42.0, 42.0, 42.0 };
+    inline short triangle_index( const float x, const float y ) {
+      short r = region_index( x, y );
+      return triangle_index_in_region( x, y, r );
+    }
 
-    float probed_tri_postcompute_d[6] = { 0.0 };
-    float probed_tri_postcompute_nx[6] = { 0.0 };
-    float probed_tri_postcompute_ny[6] = { 0.0 };
-    float probed_tri_postcompute_nz[6] = { 0.0 };
+    float probed_tri_postcompute_a[PROBE_MESH_NUMBER] = { 0.0 };
+    float probed_tri_postcompute_b[PROBE_MESH_NUMBER] = { 0.0 };
+    float probed_tri_postcompute_c[PROBE_MESH_NUMBER] = { 0.0 };
+    float probed_tri_postcompute_d[PROBE_MESH_NUMBER] = { 0.0 };
 
     inline void probing_postcompute_tri_parameters() {
 
-      float ax[6] = {
-         delta_tower1_x
-        ,probe_point_XY_x
-        ,delta_tower2_x
-        ,probe_point_YZ_x
-        ,delta_tower3_x
-        ,probe_point_ZX_x
-      };
-      float ay[6] = {
-         delta_tower1_y
-        ,probe_point_XY_y
-        ,delta_tower2_y
-        ,probe_point_YZ_y
-        ,delta_tower3_y
-        ,probe_point_ZX_y
-      };
-      float az[6] = {
-         probed_tri_altitude[0]
-        ,probed_tri_altitude[1]
-        ,probed_tri_altitude[2]
-        ,probed_tri_altitude[3]
-        ,probed_tri_altitude[4]
-        ,probed_tri_altitude[5]
-      };
 
-      float bx[6] = {
-         probe_point_XY_x
-        ,delta_tower2_x
-        ,probe_point_YZ_x
-        ,delta_tower3_x
-        ,probe_point_ZX_x
-        ,delta_tower1_x
-      };
-      float by[6] = {
-         probe_point_XY_y
-        ,delta_tower2_y
-        ,probe_point_YZ_y
-        ,delta_tower3_y
-        ,probe_point_ZX_y
-        ,delta_tower1_y
-      };
-      float bz[6] = {
-         probed_tri_altitude[1]
-        ,probed_tri_altitude[2]
-        ,probed_tri_altitude[3]
-        ,probed_tri_altitude[4]
-        ,probed_tri_altitude[5]
-        ,probed_tri_altitude[0]
-      };
+      // Plane equation: a.x+b.y+c.z+d = 0
+      // Query to find z for given x,y will be
+      // z = (-d - b.y - a.x ) / c;
+      // z = -d/c - b.y/c - a.x/c;
+      // z = - (d + b.y + a.x) / c ;
+      // z = - (L/c + M/c + N/c);
+      // if
+      //   L = d/c
+      //   M = b/c
+      //   N = a/c
 
-      float cz = probed_tri_altitude[6];
 
-      for( int i=0; i<6; i++ ) {
+      //   C
+      //   ^
+      // AC|
+      //   |
+      //   A ----> B
+      //      AB
 
-        float cax, cay, caz, cbx, cby, cbz;
-        // x:a.x, y:a.y, z:a.z - c.z
-        cax = ax[i];
-        cay = ay[i];
-        caz = az[i] - cz;
-        // x:b.x, y:b.y, z:b.z - c.z
-        cbx = bx[i];
-        cby = by[i];
-        cbz = bz[i] - cz;
+      float *A;
+      float *B;
+      float *C;
 
-        // n.x: ca.y * cb.z - ca.z * cb.y
-        probed_tri_postcompute_nx[i] = cay * cbz - caz * cby;
-        // n.y: ca.z * cb.x - ca.x * cb.z
-        probed_tri_postcompute_ny[i] = caz * cbx - cax * cbz;
-        // n.z: ca.x * cb.y - ca.y * cb.x
-        probed_tri_postcompute_nz[i] = cax * cby - cay * cbx;
-        // d: - n.z * c.z;
-        probed_tri_postcompute_d[i] = - probed_tri_postcompute_nz[i] * cz;
+      #define X 0
+      #define Y 1
+      #define Z 2
+
+      int i;
+      for(i=0; i < PROBE_MESH_NUMBER; i++) {
+        A = probe_plan[probe_plan_mesh[i][0]];
+        B = probe_plan[probe_plan_mesh[i][1]];
+        C = probe_plan[probe_plan_mesh[i][2]];
+        float a = ( B[Y]-A[Y] )*( C[Z]-A[Z] ) - ( C[Y]-A[Y] )*( B[Z]-A[Z] );
+        float b = ( B[Z]-A[Z] )*( C[X]-A[X] ) - ( C[Z]-A[Z] )*( B[X]-A[X] );
+        float c = ( B[X]-A[X] )*( C[Y]-A[Y] ) - ( C[X]-A[X] )*( B[Y]-A[Y] );
+        float d = -(a*A[X]+b*A[Y]+c*A[Z]);
+
+        float l = d/c;
+        float m = b/c;
+        float n = a/c;
+
+        probed_tri_postcompute_a[i] = a;
+        probed_tri_postcompute_b[i] = b;
+        probed_tri_postcompute_c[i] = c;
+        probed_tri_postcompute_d[i] = d;
+
       }
+
+      // For memory:
+      // precalc_probed_tri_aref[ 0 ] = delta_tower2_y / delta_tower2_x;
+      // precalc_probed_tri_aref[ 1 ] = probe_point_YZ_y / probe_point_YZ_x;
+      // precalc_probed_tri_aref[ 2 ] = delta_tower1_y / delta_tower1_x;
+      // precalc_probed_tri_aref[ 3 ] = probe_point_ZX_y / probe_point_ZX_x;
+
+      precalc_probe_plan_region_aref[ 0 ] = probe_plan[ 0][1] / probe_plan[ 0][0];
+      precalc_probe_plan_region_aref[ 1 ] = probe_plan[ 1][1] / probe_plan[ 1][0];
+      precalc_probe_plan_region_aref[ 2 ] = probe_plan[ 3][1] / probe_plan[ 3][0];
+      precalc_probe_plan_region_aref[ 3 ] = probe_plan[ 4][1] / probe_plan[ 4][0];
+      precalc_probe_plan_region_aref[ 4 ] = probe_plan[ 6][1] / probe_plan[ 6][0];
+      precalc_probe_plan_region_aref[ 5 ] = probe_plan[ 7][1] / probe_plan[ 7][0];
+      precalc_probe_plan_region_aref[ 6 ] = probe_plan[ 9][1] / probe_plan[ 9][0];
+      precalc_probe_plan_region_aref[ 7 ] = probe_plan[10][1] / probe_plan[10][0];
 
       postcompute_tri_ready = true;
     }
@@ -3548,103 +3803,41 @@ inline void gcode_G28() {
 
       feedrate = homing_feedrate[ X_AXIS ];
 
+      int i;
       // Reset
-      probed_tri_altitude[0] =
-      probed_tri_altitude[1] =
-      probed_tri_altitude[2] =
-      probed_tri_altitude[3] =
-      probed_tri_altitude[4] =
-      probed_tri_altitude[5] =
-      probed_tri_altitude[6] = 42.0;
-
-      destination[ X_AXIS ] = delta_tower1_x;
-      destination[ Y_AXIS ] = delta_tower1_y;
-      destination[ Z_AXIS ] = 10.0;
-      prepare_move();
-      st_synchronize();
-      probed_tri_altitude[0] = get_probed_Z_avg();
-
-      destination[ X_AXIS ] = probe_point_XY_x;
-      destination[ Y_AXIS ] = probe_point_XY_y;
-      destination[ Z_AXIS ] = 10.0;
-      prepare_move();
-      st_synchronize();
-      probed_tri_altitude[1] = get_probed_Z_avg();
-
-      destination[ X_AXIS ] = delta_tower2_x;
-      destination[ Y_AXIS ] = delta_tower2_y;
-      destination[ Z_AXIS ] = 10.0;
-      prepare_move();
-      st_synchronize();
-      probed_tri_altitude[2] = get_probed_Z_avg();
-
-      destination[ X_AXIS ] = probe_point_YZ_x;
-      destination[ Y_AXIS ] = probe_point_YZ_y;
-      destination[ Z_AXIS ] = 10.0;
-      prepare_move();
-      st_synchronize();
-      probed_tri_altitude[3] = get_probed_Z_avg();
-
-      destination[ X_AXIS ] = delta_tower3_x;
-      destination[ Y_AXIS ] = delta_tower3_y;
-      destination[ Z_AXIS ] = 10.0;
-      prepare_move();
-      st_synchronize();
-      probed_tri_altitude[4] = get_probed_Z_avg();
-
-      destination[ X_AXIS ] = probe_point_ZX_x;
-      destination[ Y_AXIS ] = probe_point_ZX_y;
-      destination[ Z_AXIS ] = 10.0;
-      prepare_move();
-      st_synchronize();
-      probed_tri_altitude[5] = get_probed_Z_avg();
-
-      destination[ X_AXIS ] = 0.0;
-      destination[ Y_AXIS ] = 0.0;
-      destination[ Z_AXIS ] = 10.0;
-      prepare_move();
-      st_synchronize();
-      probed_tri_altitude[6] = get_probed_Z_avg();
-
-      SERIAL_ECHOLN( "Probed tri altitude:" );
-      for(int i=0; i<7; i++) {
-        SERIAL_ECHO( "                [" );
-        SERIAL_ECHO( i );
-        SERIAL_ECHO("]: ");
-        SERIAL_ECHOLN( probed_tri_altitude[i] );
+      for(i=0; i<PROBE_POINT_NUMBER; i++) {
+        probe_plan[i][2] = 42.0;
       }
 
-      z_smooth_tri_leveling_height =
-        max(probed_tri_altitude[0],
-        max(probed_tri_altitude[1],
-        max(probed_tri_altitude[2],
-        max(probed_tri_altitude[3],
-        max(probed_tri_altitude[4],
-        max(probed_tri_altitude[5],
-            probed_tri_altitude[7])))))) -
-        min(probed_tri_altitude[0],
-        min(probed_tri_altitude[1],
-        min(probed_tri_altitude[2],
-        min(probed_tri_altitude[3],
-        min(probed_tri_altitude[4],
-        min(probed_tri_altitude[5],
-            probed_tri_altitude[7]))))));
+      // Probing
+      for(i=0; i<PROBE_POINT_NUMBER; i++) {
+        destination[ X_AXIS ] = probe_plan[i][0];
+        destination[ Y_AXIS ] = probe_plan[i][1];
+        destination[ Z_AXIS ] = 10.0;
+        prepare_move();
+        st_synchronize();
+        probe_plan[i][2] = get_probed_Z_avg();
+      }
 
-      SERIAL_ECHO( "       smooth range: " );
-      SERIAL_ECHOLN( z_smooth_tri_leveling_height );
+      #if ENABLED(DEBUG_LEVELING_FEATURE)
+        if (DEBUGGING(LEVELING)) {
+          SERIAL_ECHOLNPGM("Probed tri altitude:");
+          for(i=0; i<PROBE_POINT_NUMBER; i++) {
+            SERIAL_ECHOPGM("               [" );
+            if(i<10) SERIAL_ECHOPGM( "0" );
+            SERIAL_ECHO( i );
+            SERIAL_ECHOPGM("]: ");
+            SERIAL_ECHOLN( probe_plan[i][2] );
+          }
+        }
+      #endif
 
       z_smooth_tri_leveling_height = 20.0;
 
-      SERIAL_ECHO( "     overrided with: " );
-      SERIAL_ECHOLN( z_smooth_tri_leveling_height );
+      probing_postcompute_tri_parameters();
 
-      precalc_probed_tri_aref[ 0 ] = delta_tower2_y / delta_tower2_x;
-      precalc_probed_tri_aref[ 1 ] = probe_point_YZ_y / probe_point_YZ_x;
-      precalc_probed_tri_aref[ 2 ] = delta_tower1_y / delta_tower1_x;
-      precalc_probed_tri_aref[ 3 ] = probe_point_ZX_y / probe_point_ZX_x;
 
       //#define TEST_SPECIAL_PROBE
-
       #ifdef TEST_SPECIAL_PROBE
 
         for( float y=-100.0; y < 100.0; y+= 10.0 ) {
@@ -3660,14 +3853,9 @@ inline void gcode_G28() {
 
       #endif
 
-
-      probing_postcompute_tri_parameters();
-
-      //gcode_G28();
-
     }
 
-  #else // ELSE: DELTA_EXTRA
+  #else // ELSE: !DELTA_EXTRA
 
   /**
    * G29: Detailed Z probe, probes the bed at 3 or more points.
@@ -3831,6 +4019,9 @@ inline void gcode_G28() {
     #endif
 
     st_synchronize();
+    #if ENABLED(EMERGENCY_STOP)
+      handle_emergency_stop();
+    #endif
 
     setup_for_endstop_move();
 
@@ -4202,7 +4393,11 @@ inline void gcode_G28() {
     /**
      * G30: Do a single Z probe at the current XY
      */
+    #if ENABLED(DELTA_EXTRA)
+    inline void gcode_G30(bool fast/*default is declared above*/) {
+    #else
     inline void gcode_G30() {
+    #endif
       #if HAS_SERVO_ENDSTOPS
         raise_z_for_servo();
       #endif
@@ -4214,7 +4409,11 @@ inline void gcode_G28() {
 
       feedrate = homing_feedrate[Z_AXIS];
 
-      run_z_probe();
+      #if ENABLED(DELTA_EXTRA)
+        run_z_probe(fast);
+      #else
+        run_z_probe();
+      #endif
       SERIAL_PROTOCOLPGM("Bed X: ");
       SERIAL_PROTOCOL(current_position[X_AXIS] + X_PROBE_OFFSET_FROM_EXTRUDER + 0.0001);
       SERIAL_PROTOCOLPGM(" Y: ");
@@ -6594,7 +6793,101 @@ inline void gcode_M503() {
 
 #endif // CUSTOM_M_CODE_SET_Z_PROBE_OFFSET
 
+
+
 #if ENABLED(FILAMENTCHANGEENABLE)
+
+  // Generally :
+  //   homing_feedrate is expressed in mm/min
+  //   max_feedrate is expressed in mm/s
+  #if ENABLED(DELTA)
+    #define SET_FEEDRATE_FOR_MOVE          feedrate = homing_feedrate[X_AXIS] / 60.0;
+    #define SET_FEEDRATE_FOR_EXTRUDER_MOVE feedrate = max_feedrate[E_AXIS];
+    // The following plan method use feedrate expressed in mm/s
+    #define RUNPLAN calculate_delta(destination); \
+                    plan_buffer_line(delta[X_AXIS], delta[Y_AXIS], delta[Z_AXIS], destination[E_AXIS], feedrate, active_extruder);
+  #else
+    #define SET_FEEDRATE_FOR_MOVE          feedrate = homing_feedrate[X_AXIS];
+    #define SET_FEEDRATE_FOR_EXTRUDER_MOVE feedrate = max_feedrate[E_AXIS] * 60.0;
+    // The following plan method use feedrate expressed in mm/min
+    #define RUNPLAN line_to_destination(feedrate);
+  #endif
+
+  #if ENABLED(DELTA_EXTRA) && ENABLED(Z_MIN_MAGIC)
+
+    bool change_filament_by_tap_tap = false;
+
+    inline void manage_tap_tap() {
+      if ( !startup_auto_calibration
+        && !IS_SD_PRINTING
+        && !change_filament_by_tap_tap
+        #if ENABLED(SUMMON_PRINT_PAUSE)
+        && !print_pause_summoned
+        #endif
+        #if ENABLED(FILAMENT_RUNOUT_SENSOR)
+        && !filament_ran_out
+        #endif
+        && z_magic_hit_count > 1
+      ) {
+        SERIAL_ECHOLNPGM("Tap tap : Heating and changing filament from IDLE state");
+        change_filament_by_tap_tap = true;
+        enqueue_and_echo_commands_P(PSTR("G28\nM104 S180\nG0 F150 X0 Y0 Z100\nM109 S180\nD600\nM106 S255\nM104 S0\nG28"));
+      }
+    }
+
+    inline bool cant_enter_M600_or_D600();
+
+    inline void gcode_D600() {
+      SERIAL_ECHOLNPGM( "Filament expulsion" );
+
+      if (cant_enter_M600_or_D600()) return;
+
+      // Synchronize all moves
+      st_synchronize();
+
+      float previous_dest = destination[E_AXIS];
+      destination[E_AXIS] += FILAMENTCHANGE_FINALRETRACT;
+
+      SET_FEEDRATE_FOR_EXTRUDER_MOVE;
+      RUNPLAN;
+      st_synchronize();
+      destination[E_AXIS] = previous_dest;
+      current_position[E_AXIS] = destination[E_AXIS];
+      sync_plan_position_e();
+
+      change_filament_by_tap_tap = false;
+    }
+  #endif
+
+
+  inline bool cant_enter_M600_or_D600() {
+
+    if (degHotend(active_extruder) < extrude_min_temp) {
+      SERIAL_ERROR_START;
+      SERIAL_ERRORLNPGM(MSG_TOO_COLD_FOR_M600);
+
+      #if ENABLED(FILAMENT_RUNOUT_SENSOR)
+        filament_ran_out = false;
+      #endif
+
+      #if ENABLED(SUMMON_PRINT_PAUSE)
+        print_pause_summoned = false;
+      #endif
+
+      #if ENABLED(DELTA_EXTRA) && ENABLED(Z_MIN_MAGIC)
+        change_filament_by_tap_tap = false;
+      #endif
+
+      return true;
+    }
+
+    return false;
+  }
+
+  #if ENABLED(ONE_LED)
+    // Pre-declaration
+    inline void set_notify_warning();
+  #endif
 
   /**
    * M600: Pause for filament change
@@ -6613,37 +6906,22 @@ inline void gcode_M503() {
    */
   inline void gcode_M600() {
 
-    if (degHotend(active_extruder) < extrude_min_temp) {
-      SERIAL_ERROR_START;
-      SERIAL_ERRORLNPGM(MSG_TOO_COLD_FOR_M600);
+    SERIAL_ECHOLNPGM( "Pause for filament change" );
 
-      #if ENABLED(FILAMENT_RUNOUT_SENSOR)
-        filament_ran_out = false;
-      #endif
+    if (cant_enter_M600_or_D600()) return;
 
-      #if ENABLED(SUMMON_PRINT_PAUSE)
-        print_pause_summoned = false;
-      #endif
-
-      return;
-    }
+    #if ENABLED(SUMMON_PRINT_PAUSE)
+      // Simulate direct call M600
+      print_pause_summoned = true;
+    #endif
 
     float lastpos[NUM_AXIS];
-    #if ENABLED(DELTA)
-      float fr60 = feedrate / 60;
-    #else
-      float fr = feedrate;
-    #endif
+    float previous_feedrate;
 
     for (int i = 0; i < NUM_AXIS; i++)
       lastpos[i] = destination[i] = current_position[i];
 
-    #if ENABLED(DELTA)
-      #define RUNPLAN calculate_delta(destination); \
-                      plan_buffer_line(delta[X_AXIS], delta[Y_AXIS], delta[Z_AXIS], destination[E_AXIS], fr60, active_extruder);
-    #else
-      #define RUNPLAN line_to_destination(fr);
-    #endif
+    previous_feedrate = feedrate;
 
     //finish moves
     // st_synchronize();
@@ -6654,33 +6932,29 @@ inline void gcode_M503() {
       else destination[E_AXIS] += FILAMENTCHANGE_FIRSTRETRACT;
     #endif
 
-    // First retract step must be done quickly to avoid melted material in the ptfe/nozzle...
-    #if ENABLED(DELTA)
-      fr60 *= FILAMENTCHANGE_FEEDRATE_MULTIPLICATOR;
-    #elif ENABLED(FILAMENT_RUNOUT_SENSOR)
-      fr *= FILAMENTCHANGE_FEEDRATE_MULTIPLICATOR;
-    #endif
-
+    SET_FEEDRATE_FOR_EXTRUDER_MOVE;
     RUNPLAN;
-
-    // After first retract step, we set back fr60 to its initial value...
-    #if ENABLED(DELTA)
-      fr60 /= FILAMENTCHANGE_FEEDRATE_MULTIPLICATOR;
-    #elif ENABLED(FILAMENT_RUNOUT_SENSOR)
-      fr /= FILAMENTCHANGE_FEEDRATE_MULTIPLICATOR;
-    #endif
 
     //lift Z
-    if (code_seen('Z')) destination[Z_AXIS] += code_value();
-    #ifdef FILAMENTCHANGE_ZADD
-      else destination[Z_AXIS] += FILAMENTCHANGE_ZADD;
+    #if ENABLED(DELTA_EXTRA)
+      float z_destination = destination[Z_AXIS];
+      if (code_seen('Z')) z_destination += code_value();
+      #ifdef FILAMENTCHANGE_ZADD
+        else z_destination += FILAMENTCHANGE_ZADD;
+      #endif
+      NOMORE(z_destination, (Z_MAX_POS-25.0));
+      if (z_destination > destination[Z_AXIS]) {
+        destination[Z_AXIS] = z_destination;
+      }
+    #else
+      if (code_seen('Z')) destination[Z_AXIS] += code_value();
+      #ifdef FILAMENTCHANGE_ZADD
+        else destination[Z_AXIS] += FILAMENTCHANGE_ZADD;
+      #endif
     #endif
 
+    SET_FEEDRATE_FOR_MOVE;
     RUNPLAN;
-
-    // #if ENABLED(DELTA)
-    //   fr60 = homing_feedrate[ Z_AXIS ];
-    // #endif
 
     //move xy
     if (code_seen('X')) destination[X_AXIS] = code_value();
@@ -6693,6 +6967,7 @@ inline void gcode_M503() {
       else destination[Y_AXIS] = FILAMENTCHANGE_YPOS;
     #endif
 
+    SET_FEEDRATE_FOR_MOVE;
     RUNPLAN;
 
     if (code_seen('L')) destination[E_AXIS] += code_value();
@@ -6700,9 +6975,10 @@ inline void gcode_M503() {
       else destination[E_AXIS] += FILAMENTCHANGE_FINALRETRACT;
     #endif
 
+    SET_FEEDRATE_FOR_EXTRUDER_MOVE;
     RUNPLAN;
 
-    //finish moves
+    // validate planned all moves
     st_synchronize();
 
     // DAGOMA added
@@ -6775,64 +7051,100 @@ inline void gcode_M503() {
       millis_t next_tick = 0;
     #endif
     KEEPALIVE_STATE(PAUSED_FOR_USER);
-    #if DISABLED(NO_LCD_FOR_FILAMENTCHANGEABLE)
-    while ( ! ( lcd_clicked() || (pin_number != -1 && digitalRead(pin_number) == target) ) ) {
-    #else
-    while (pin_number != -1 && digitalRead(pin_number) != target) {
+
+    #if HAS_FILRUNOUT
+    bool can_exit_pause;
+    do { // Loop while no filament
+      can_exit_pause = true;
     #endif
-      #if DISABLED(AUTO_FILAMENT_CHANGE)
-        millis_t ms = millis();
-        if (ELAPSED(ms, next_tick)) {
-          #if DISABLED(NO_LCD_FOR_FILAMENTCHANGEABLE)
-          lcd_quick_feedback();
+
+      #if DISABLED(NO_LCD_FOR_FILAMENTCHANGEABLE)
+      while ( ! ( lcd_clicked() || (pin_number != -1 && digitalRead(pin_number) == target) ) ) {
+      #else
+      while (pin_number != -1 && digitalRead(pin_number) != target) {
+      #endif
+        #if DISABLED(AUTO_FILAMENT_CHANGE)
+          millis_t ms = millis();
+          if (ELAPSED(ms, next_tick)) {
+            #if DISABLED(NO_LCD_FOR_FILAMENTCHANGEABLE)
+            lcd_quick_feedback();
+            #endif
+            next_tick = ms + 2500UL; // feedback every 2.5s while waiting
+
+            // Ensure steppers stay enabled
+            enable_x();
+            enable_y();
+            enable_z();
+
+
+            #if ENABLED( DELTA_EXTRA )
+              // Only checked every 2.5s
+              // Detected if sd is out
+              if ( IS_SD_PRINTING && !card.stillPluggedIn() ) {
+                // Abort current print
+                while( true ) {
+                  #if ENABLED(ONE_LED)
+                    one_led_on();
+                    delay(150);
+                    one_led_off();
+                  #endif
+                  delay(150);
+                }
+                //abort_sd_printing();
+                //enqueue_and_echo_commands_P( PSTR("G28") );
+                return;
+              }
+            #endif
+          }
+
+          #if ENABLED(DELTA_EXTRA) && ENABLED(Z_MIN_MAGIC)
+            // Must be check quicker than 2.5s
+            if ( z_magic_hit_count > 1 ) {
+              gcode_D600();
+            }
           #endif
-          next_tick = ms + 2500UL; // feedback every 2.5s while waiting
+
+          idle(true);
+        #else
+          current_position[E_AXIS] += AUTO_FILAMENT_CHANGE_LENGTH;
+          destination[E_AXIS] = current_position[E_AXIS];
+          line_to_destination(AUTO_FILAMENT_CHANGE_FEEDRATE);
+          st_synchronize();
+        #endif
+      } // while(!lcd_clicked)
+
+      #if ENABLED( NO_LCD_FOR_FILAMENTCHANGEABLE ) && ENABLED( FILAMENT_RUNOUT_SENSOR )
+        // Wait a bit more to see if we want to disable filrunout sensor
+        millis_t now = millis();
+        millis_t long_push = now + 2000UL;
+        delay( 200 );
+        while (pin_number != -1 && digitalRead(pin_number) == target && PENDING(now, long_push)) {
           enable_x();
           enable_y();
           enable_z();
+          idle(true);
+          now = millis();
+        }
+        if ( ELAPSED(now,long_push) ) {
+          filrunout_bypassed = true;
+          SERIAL_ECHOLN( "Filament sensor bypassed" );
+        }
+      #endif
 
-
-          #if ENABLED( DELTA_EXTRA )
-            // Detected if sd is out
-            if ( !card.stillPluggedIn() ) {
-              // Abort current print
-              while( true ) {
-                one_led_on();
-                delay(150);
-                one_led_off();
-                delay(150);
-              }
-              //abort_sd_printing();
-              //enqueue_and_echo_commands_P( PSTR("G28") );
-              return;
-            }
+    #if HAS_FILRUNOUT
+        if( !(READ(FILRUNOUT_PIN) ^ FIL_RUNOUT_INVERTING) ) {
+          #if ENABLED(SUMMON_PRINT_PAUSE) && ENABLED( NO_LCD_FOR_FILAMENTCHANGEABLE ) && ENABLED( FILAMENT_RUNOUT_SENSOR )
+          if ( !filrunout_bypassed ) {
+          #endif
+            #if ENABLED(ONE_LED)
+              set_notify_warning();
+            #endif
+            can_exit_pause = false;
+          #if ENABLED(SUMMON_PRINT_PAUSE) && ENABLED( NO_LCD_FOR_FILAMENTCHANGEABLE ) && ENABLED( FILAMENT_RUNOUT_SENSOR )
+          }
           #endif
         }
-        idle(true);
-      #else
-        current_position[E_AXIS] += AUTO_FILAMENT_CHANGE_LENGTH;
-        destination[E_AXIS] = current_position[E_AXIS];
-        line_to_destination(AUTO_FILAMENT_CHANGE_FEEDRATE);
-        st_synchronize();
-      #endif
-    } // while(!lcd_clicked)
-
-    #if ENABLED( NO_LCD_FOR_FILAMENTCHANGEABLE ) && ENABLED( FILAMENT_RUNOUT_SENSOR )
-      // Wait a bit more to see if we want to disable filrunout sensor
-      millis_t now = millis();
-      millis_t long_push = now + 1000UL;
-      delay( 200 );
-      while (pin_number != -1 && digitalRead(pin_number) == target && PENDING(now, long_push)) {
-        enable_x();
-        enable_y();
-        enable_z();
-        idle(true);
-        now = millis();
-      }
-      if ( ELAPSED(now,long_push) ) {
-        filrunout_bypassed = true;
-        SERIAL_ECHOLN( "Filament sensor bypassed" );
-      }
+      } while( !can_exit_pause );
     #endif
 
     KEEPALIVE_STATE(IN_HANDLER);
@@ -6845,12 +7157,7 @@ inline void gcode_M503() {
       st_synchronize();
     #endif
 
-    //return to normal
-    if (code_seen('E')) destination[E_AXIS] -= code_value();
-    #ifdef FILAMENTCHANGE_FIRSTRETRACT
-      else destination[E_AXIS] -= FILAMENTCHANGE_FIRSTRETRACT;
-    #endif
-
+    // Return to normal
     if (code_seen('L')) destination[E_AXIS] -= code_value();
     #ifdef FILAMENTCHANGE_FINALRETRACT
       else destination[E_AXIS] -= FILAMENTCHANGE_FINALRETRACT;
@@ -6859,6 +7166,7 @@ inline void gcode_M503() {
     current_position[E_AXIS] = destination[E_AXIS]; //the long retract of L is compensated by manual filament feeding
     sync_plan_position_e();
 
+    SET_FEEDRATE_FOR_EXTRUDER_MOVE;
     RUNPLAN; //should do nothing
 
     #if DISABLED(NO_LCD_FOR_FILAMENTCHANGEABLE)
@@ -6868,19 +7176,29 @@ inline void gcode_M503() {
     #if ENABLED(DELTA)
       // Move XYZ to starting position, then E
       calculate_delta(lastpos);
-      plan_buffer_line(delta[X_AXIS], delta[Y_AXIS], delta[Z_AXIS], destination[E_AXIS], fr60, active_extruder);
-      plan_buffer_line(delta[X_AXIS], delta[Y_AXIS], delta[Z_AXIS], lastpos[E_AXIS], fr60, active_extruder);
+
+      SET_FEEDRATE_FOR_MOVE;
+      plan_buffer_line(delta[X_AXIS], delta[Y_AXIS], delta[Z_AXIS], destination[E_AXIS], feedrate, active_extruder);
+
+      SET_FEEDRATE_FOR_EXTRUDER_MOVE;
+      plan_buffer_line(delta[X_AXIS], delta[Y_AXIS], delta[Z_AXIS], lastpos[E_AXIS], feedrate, active_extruder);
     #else
       // Move XY to starting position, then Z, then E
       destination[X_AXIS] = lastpos[X_AXIS];
       destination[Y_AXIS] = lastpos[Y_AXIS];
+
+      SET_FEEDRATE_FOR_MOVE;
       line_to_destination();
       destination[Z_AXIS] = lastpos[Z_AXIS];
       line_to_destination();
+
       destination[E_AXIS] = lastpos[E_AXIS];
+
+      SET_FEEDRATE_FOR_EXTRUDER_MOVE;
       line_to_destination();
     #endif
 
+    // Validates all planned moves
     st_synchronize();
 
     #if ENABLED(FILAMENT_RUNOUT_SENSOR)
@@ -6890,6 +7208,9 @@ inline void gcode_M503() {
     #if ENABLED(SUMMON_PRINT_PAUSE)
       print_pause_summoned = false;
     #endif
+
+    // Restore previous feedrate
+    feedrate = previous_feedrate;
 
   }
 
@@ -7284,22 +7605,29 @@ inline void gcode_D999() {
 }
 
 inline void gcode_D851() {
+  
+  startup_auto_calibration = true;
 
-  SERIAL_ECHOLN( "Starting full Delta calibration" );
+  SERIAL_ECHOLNPGM( "Starting full Delta calibration" );
 
   postcompute_tri_ready = false; // Disable tri-delta correction
 
   gcode_M502(); // Restore factory settings
+
+  if (code_seen('L')) {
+    SERIAL_ECHOPGM( "Overriding L with: " );
+    delta_diagonal_rod = code_value();
+    SERIAL_ECHOLN( delta_diagonal_rod );
+  }
+
   gcode_M665(); // Re-Calc Delta settings
   gcode_M500(); // Save settings
 
   gcode_G28();
 
-  #define THAT_FULL_AND_R
-
-#ifdef THAT_FULL_AND_R
 
   feedrate = homing_feedrate[ Z_AXIS ];
+  //feedrate = max_feedrate[ Z_AXIS ] * 60;
 
   float tower1_altitude, tower2_altitude, tower3_altitude, center_altitude;
 
@@ -7327,6 +7655,45 @@ inline void gcode_D851() {
   st_synchronize();
   tower3_altitude = get_probed_Z_avg();
 
+  // Use last result as endstops adujst
+  endstop_adj[0] = tower1_altitude /*+ zprobe_zoffset*/;
+  endstop_adj[1] = tower2_altitude /*+ zprobe_zoffset*/;
+  endstop_adj[2] = tower3_altitude /*+ zprobe_zoffset*/;
+
+  // Store endstop adjust
+  gcode_M500();
+
+  // JUST FOR REPORTING BACK
+  // Take in account now
+  gcode_G28();
+
+  feedrate = homing_feedrate[ Z_AXIS ];
+
+  // TOWER 1
+  destination[X_AXIS] = delta_tower1_x;
+  destination[Y_AXIS] = delta_tower1_y;
+  destination[Z_AXIS] = 10.0f;
+  prepare_move();
+  st_synchronize();
+  tower1_altitude = get_probed_Z_avg();
+
+  // TOWER 2
+  destination[X_AXIS] = delta_tower2_x;
+  destination[Y_AXIS] = delta_tower2_y;
+  destination[Z_AXIS] = 10.0f;
+  prepare_move();
+  st_synchronize();
+  tower2_altitude = get_probed_Z_avg();
+
+  // TOWER 3
+  destination[X_AXIS] = delta_tower3_x;
+  destination[Y_AXIS] = delta_tower3_y;
+  destination[Z_AXIS] = 10.0f;
+  prepare_move();
+  st_synchronize();
+  tower3_altitude = get_probed_Z_avg();
+
+
   // CENTER
   destination[X_AXIS] = 0.0f;
   destination[Y_AXIS] = 0.0f;
@@ -7335,25 +7702,30 @@ inline void gcode_D851() {
   st_synchronize();
   center_altitude = get_probed_Z_avg();
 
-  SERIAL_ECHOLN( "R probed points:" );
-  SERIAL_ECHO  ( "  T1: " );
-  SERIAL_ECHOLN( tower1_altitude );
-  SERIAL_ECHO  ( "  T2: " );
-  SERIAL_ECHOLN( tower2_altitude );
-  SERIAL_ECHO  ( "  T3: " );
-  SERIAL_ECHOLN( tower3_altitude );
-  SERIAL_ECHO  ( "   C: " );
-  SERIAL_ECHOLN( center_altitude );
+  SERIAL_ECHOLNPGM( "R probed points:" );
+  SERIAL_ECHOPGM  ( "  T1: " );
+  SERIAL_ECHOLN   ( tower1_altitude );
+  SERIAL_ECHOPGM  ( "  T2: " );
+  SERIAL_ECHOLN   ( tower2_altitude );
+  SERIAL_ECHOPGM  ( "  T3: " );
+  SERIAL_ECHOLN   ( tower3_altitude );
+  SERIAL_ECHOPGM  ( "   C: " );
+  SERIAL_ECHOLN   ( center_altitude );
 
   float mean_ref_plan_altitude = ( tower1_altitude + tower2_altitude + tower3_altitude ) / 3.0;
   float diff_center_altitude = center_altitude - mean_ref_plan_altitude;
 
-  SERIAL_ECHO( "Mean based difference: " );
-  SERIAL_ECHOLN( diff_center_altitude );
+  SERIAL_ECHOPGM( "Initial mean based difference: " );
+  SERIAL_ECHOLN ( diff_center_altitude );
+
+  SERIAL_ECHOPGM( "Initial delta radius: " );
+  SERIAL_ECHOLN ( delta_radius );
 
   do {
-
     delta_radius -= 2.0 * diff_center_altitude;
+
+    SERIAL_ECHOPGM( "Testing delta radius: " );
+    SERIAL_ECHOLN ( delta_radius );
 
     gcode_M665();
 
@@ -7388,34 +7760,35 @@ inline void gcode_D851() {
     st_synchronize();
     center_altitude = get_probed_Z_avg();
 
-    SERIAL_ECHOLN( "R probed points:" );
-    SERIAL_ECHO  ( "  T1: " );
-    SERIAL_ECHOLN( tower1_altitude );
-    SERIAL_ECHO  ( "  T2: " );
-    SERIAL_ECHOLN( tower2_altitude );
-    SERIAL_ECHO  ( "  T3: " );
-    SERIAL_ECHOLN( tower3_altitude );
-    SERIAL_ECHO  ( "   C: " );
-    SERIAL_ECHOLN( center_altitude );
+    SERIAL_ECHOLNPGM( "R probed points:" );
+    SERIAL_ECHOPGM  ( "  T1: " );
+    SERIAL_ECHOLN   ( tower1_altitude );
+    SERIAL_ECHOPGM  ( "  T2: " );
+    SERIAL_ECHOLN   ( tower2_altitude );
+    SERIAL_ECHOPGM  ( "  T3: " );
+    SERIAL_ECHOLN   ( tower3_altitude );
+    SERIAL_ECHOPGM  ( "   C: " );
+    SERIAL_ECHOLN   ( center_altitude );
 
     mean_ref_plan_altitude = ( tower1_altitude + tower2_altitude + tower3_altitude ) / 3.0;
     diff_center_altitude = center_altitude - mean_ref_plan_altitude;
 
-    SERIAL_ECHO( "NEW Mean based difference: " );
-    SERIAL_ECHOLN( diff_center_altitude );
+    SERIAL_ECHOPGM( "NEW Mean based difference: " );
+    SERIAL_ECHOLN ( diff_center_altitude );
+    SERIAL_ECHOPGM( "With delta radius: " );
+    SERIAL_ECHOLN ( delta_radius );
   } while( abs( diff_center_altitude ) > 0.05 );
 
-  // Use last result as endstops adujst
-  endstop_adj[0] = tower1_altitude /*+ zprobe_zoffset*/;
-  endstop_adj[1] = tower2_altitude /*+ zprobe_zoffset*/;
-  endstop_adj[2] = tower3_altitude /*+ zprobe_zoffset*/;
 
-  // Store endstop adjust
+  SERIAL_ECHOPGM( "Storing delta radius: " );
+  SERIAL_ECHOLN ( delta_radius );
+
+  // Store delta_radius
   gcode_M500();
 
-  // JUST FOR REPORTING BACK
   // Take in account now
   gcode_G28();
+  // Now, we need to adjust endstops offset with the corrected radius
 
   // TOWER 1
   destination[X_AXIS] = delta_tower1_x;
@@ -7449,280 +7822,102 @@ inline void gcode_D851() {
   st_synchronize();
   center_altitude = get_probed_Z_avg();
 
-  SERIAL_ECHOLN( "R probed points:" );
-  SERIAL_ECHO  ( "  T1: " );
-  SERIAL_ECHOLN( tower1_altitude );
-  SERIAL_ECHO  ( "  T2: " );
-  SERIAL_ECHOLN( tower2_altitude );
-  SERIAL_ECHO  ( "  T3: " );
-  SERIAL_ECHOLN( tower3_altitude );
-  SERIAL_ECHO  ( "   C: " );
-  SERIAL_ECHOLN( center_altitude );
+  SERIAL_ECHOLNPGM( "R probed points:" );
+  SERIAL_ECHOPGM  ( "  T1: " );
+  SERIAL_ECHOLN   ( tower1_altitude );
+  SERIAL_ECHOPGM  ( "  T2: " );
+  SERIAL_ECHOLN   ( tower2_altitude );
+  SERIAL_ECHOPGM  ( "  T3: " );
+  SERIAL_ECHOLN   ( tower3_altitude );
+  SERIAL_ECHOPGM  ( "   C: " );
+  SERIAL_ECHOLN   ( center_altitude );
 
   mean_ref_plan_altitude = ( tower1_altitude + tower2_altitude + tower3_altitude ) / 3.0;
   diff_center_altitude = center_altitude - mean_ref_plan_altitude;
 
-  SERIAL_ECHO( "FOR VERIF ONLY Mean based difference: " );
+  SERIAL_ECHOPGM( "Mean based difference: " );
   SERIAL_ECHOLN( diff_center_altitude );
 
-#elif defined THAT_SIMPLE
-
-  feedrate = homing_feedrate[ Z_AXIS ];
-
-  float tower1_altitude, tower2_altitude, tower3_altitude, center_altitude;
-
-  // TOWER 1
-  destination[X_AXIS] = delta_tower1_x;
-  destination[Y_AXIS] = delta_tower1_y;
-  destination[Z_AXIS] = 10.0f;
-  prepare_move();
-  st_synchronize();
-  tower1_altitude = get_probed_Z_avg();
-
-  // TOWER 2
-  destination[X_AXIS] = delta_tower2_x;
-  destination[Y_AXIS] = delta_tower2_y;
-  destination[Z_AXIS] = 10.0f;
-  prepare_move();
-  st_synchronize();
-  tower2_altitude = get_probed_Z_avg();
-
-  // TOWER 3
-  destination[X_AXIS] = delta_tower3_x;
-  destination[Y_AXIS] = delta_tower3_y;
-  destination[Z_AXIS] = 10.0f;
-  prepare_move();
-  st_synchronize();
-  tower3_altitude = get_probed_Z_avg();
-
-  SERIAL_ECHOLN( "R probed points:" );
-  SERIAL_ECHO  ( "  T1: " );
-  SERIAL_ECHOLN( tower1_altitude );
-  SERIAL_ECHO  ( "  T2: " );
-  SERIAL_ECHOLN( tower2_altitude );
-  SERIAL_ECHO  ( "  T3: " );
-  SERIAL_ECHOLN( tower3_altitude );
+  SERIAL_ECHOPGM( "With delta radius: " );
+  SERIAL_ECHOLN ( delta_radius );
 
   // Use last result as endstops adujst
-  endstop_adj[0] = tower1_altitude + zprobe_zoffset;
-  endstop_adj[1] = tower2_altitude + zprobe_zoffset;
-  endstop_adj[2] = tower3_altitude + zprobe_zoffset;
+  endstop_adj[0] += tower1_altitude /*+ zprobe_zoffset*/;
+  endstop_adj[1] += tower2_altitude /*+ zprobe_zoffset*/;
+  endstop_adj[2] += tower3_altitude /*+ zprobe_zoffset*/;
 
   // Store endstop adjust
   gcode_M500();
 
-#else
+  #if ENABLED(DEBUG_LEVELING_FEATURE)
+    if (DEBUGGING(LEVELING)) {
 
-  feedrate = 8000;
+      // JUST FOR REPORTING BACK
+      // Take in account now
+      gcode_G28();
 
-  float tower1_altitude, tower2_altitude, tower3_altitude, center_altitude;
+      // TOWER 1
+      destination[X_AXIS] = delta_tower1_x;
+      destination[Y_AXIS] = delta_tower1_y;
+      destination[Z_AXIS] = 10.0f;
+      prepare_move();
+      st_synchronize();
+      tower1_altitude = get_probed_Z_avg();
 
-  // TOWER 1
-  destination[X_AXIS] = delta_tower1_x;
-  destination[Y_AXIS] = delta_tower1_y;
-  destination[Z_AXIS] = 10.0f;
-  prepare_move();
-  st_synchronize();
+      // TOWER 2
+      destination[X_AXIS] = delta_tower2_x;
+      destination[Y_AXIS] = delta_tower2_y;
+      destination[Z_AXIS] = 10.0f;
+      prepare_move();
+      st_synchronize();
+      tower2_altitude = get_probed_Z_avg();
 
-  int da_pause;
-  da_pause = 10; do { idle(); delay(100); } while(--da_pause);
+      // TOWER 3
+      destination[X_AXIS] = delta_tower3_x;
+      destination[Y_AXIS] = delta_tower3_y;
+      destination[Z_AXIS] = 10.0f;
+      prepare_move();
+      st_synchronize();
+      tower3_altitude = get_probed_Z_avg();
 
-  tower1_altitude = get_probed_Z_avg();
+      // CENTER
+      destination[X_AXIS] = 0.0f;
+      destination[Y_AXIS] = 0.0f;
+      destination[Z_AXIS] = 10.0f;
+      prepare_move();
+      st_synchronize();
+      center_altitude = get_probed_Z_avg();
 
-  // TOWER 2
-  destination[X_AXIS] = delta_tower2_x;
-  destination[Y_AXIS] = delta_tower2_y;
-  destination[Z_AXIS] = 10.0f;
-  prepare_move();
-  st_synchronize();
+       SERIAL_ECHOLNPGM( "R probed points:" );
+      SERIAL_ECHOPGM  ( "  T1: " );
+      SERIAL_ECHOLN   ( tower1_altitude );
+      SERIAL_ECHOPGM  ( "  T2: " );
+      SERIAL_ECHOLN   ( tower2_altitude );
+      SERIAL_ECHOPGM  ( "  T3: " );
+      SERIAL_ECHOLN   ( tower3_altitude );
+      SERIAL_ECHOPGM  ( "   C: " );
+      SERIAL_ECHOLN   ( center_altitude );
 
-  da_pause = 10; do { idle(); delay(100); } while(--da_pause);
+      mean_ref_plan_altitude = ( tower1_altitude + tower2_altitude + tower3_altitude ) / 3.0;
+      diff_center_altitude = center_altitude - mean_ref_plan_altitude;
 
-  tower2_altitude = get_probed_Z_avg();
+      SERIAL_ECHOPGM( "Mean based difference: " );
+      SERIAL_ECHOLN( diff_center_altitude );
 
-  // TOWER 3
-  destination[X_AXIS] = delta_tower3_x;
-  destination[Y_AXIS] = delta_tower3_y;
-  destination[Z_AXIS] = 10.0f;
-  prepare_move();
-  st_synchronize();
-
-  da_pause = 10; do { idle(); delay(100); } while(--da_pause);
-
-  tower3_altitude = get_probed_Z_avg();;
-
-  SERIAL_ECHOLN( "endstop_adj probed points:" );
-  SERIAL_ECHO  ( "  T1: " );
-  SERIAL_ECHOLN( tower1_altitude );
-  SERIAL_ECHO  ( "  T2: " );
-  SERIAL_ECHOLN( tower2_altitude );
-  SERIAL_ECHO  ( "  T3: " );
-  SERIAL_ECHOLN( tower3_altitude );
-
-  endstop_adj[0] = tower1_altitude + zprobe_zoffset;
-  endstop_adj[1] = tower2_altitude + zprobe_zoffset;
-  endstop_adj[2] = tower3_altitude + zprobe_zoffset;
-
-  // Store endstop adjust
-  gcode_M500();
-
-  // Take in account now
-  gcode_G28();;
-
-  //
-  // NOW
-  // Reprobe each tower PLUS middle point
-  feedrate = homing_feedrate[ X_AXIS ];
-
-  // TOWER 1
-  destination[X_AXIS] = delta_tower1_x;
-  destination[Y_AXIS] = delta_tower1_y;
-  destination[Z_AXIS] = 10.0f;
-  prepare_move();
-  st_synchronize();
-
-  da_pause = 5; do { idle(); delay(100); } while(--da_pause);
-
-  tower1_altitude = get_probed_Z_avg();
-
-
-  // TOWER 2
-  destination[X_AXIS] = delta_tower2_x;
-  destination[Y_AXIS] = delta_tower2_y;
-  destination[Z_AXIS] = 10.0f;
-  prepare_move();
-  st_synchronize();
-
-  da_pause = 5; do { idle(); delay(100); } while(--da_pause);
-
-  tower2_altitude = get_probed_Z_avg();
-
-
-  // TOWER 3
-  destination[X_AXIS] = delta_tower3_x;
-  destination[Y_AXIS] = delta_tower3_y;
-  destination[Z_AXIS] = 10.0f;
-  prepare_move();
-  st_synchronize();
-
-  da_pause = 5; do { idle(); delay(100); } while(--da_pause);
-
-  tower3_altitude = get_probed_Z_avg();
-
-
-  // CENTER
-  destination[X_AXIS] = 0.0f;
-  destination[Y_AXIS] = 0.0f;
-  destination[Z_AXIS] = 10.0f;
-  prepare_move();
-  st_synchronize();
-
-  da_pause = 5; do { idle(); delay(100); } while(--da_pause);
-
-  center_altitude = get_probed_Z_avg();
-
-  SERIAL_ECHOLN( "R probed points:" );
-  SERIAL_ECHO  ( "  T1: " );
-  SERIAL_ECHOLN( tower1_altitude );
-  SERIAL_ECHO  ( "  T2: " );
-  SERIAL_ECHOLN( tower2_altitude );
-  SERIAL_ECHO  ( "  T3: " );
-  SERIAL_ECHOLN( tower3_altitude );
-  SERIAL_ECHO  ( "   C: " );
-  SERIAL_ECHOLN( center_altitude );
-
-  float mean_ref_plan_altitude = ( tower1_altitude + tower2_altitude + tower3_altitude ) / 3.0;
-  float diff_center_altitude = center_altitude - mean_ref_plan_altitude;
-
-  SERIAL_ECHO( "Mean based difference: " );
-  SERIAL_ECHOLN( diff_center_altitude );
-
-  if ( diff_center_altitude < 0.0 )
-    delta_radius += sqrt(abs(diff_center_altitude));
-  else
-    delta_radius -= sqrt(diff_center_altitude);
-
-  gcode_M665();
-
-  gcode_M500();
-
-  // Take in account now
-  gcode_G28();;
-
-  //
-  // NOW
-  // Reprobe each tower PLUS middle point
-  feedrate = homing_feedrate[ X_AXIS ];
-
-  // TOWER 1
-  destination[X_AXIS] = delta_tower1_x;
-  destination[Y_AXIS] = delta_tower1_y;
-  destination[Z_AXIS] = 10.0f;
-  prepare_move();
-  st_synchronize();
-
-  da_pause = 5; do { idle(); delay(100); } while(--da_pause);
-
-  tower1_altitude = get_probed_Z_avg();
-
-
-  // TOWER 2
-  destination[X_AXIS] = delta_tower2_x;
-  destination[Y_AXIS] = delta_tower2_y;
-  destination[Z_AXIS] = 10.0f;
-  prepare_move();
-  st_synchronize();
-
-  da_pause = 5; do { idle(); delay(100); } while(--da_pause);
-
-  tower2_altitude = get_probed_Z_avg();
-
-
-  // TOWER 3
-  destination[X_AXIS] = delta_tower3_x;
-  destination[Y_AXIS] = delta_tower3_y;
-  destination[Z_AXIS] = 10.0f;
-  prepare_move();
-  st_synchronize();
-
-  da_pause = 5; do { idle(); delay(100); } while(--da_pause);
-
-  tower3_altitude = get_probed_Z_avg();
-
-
-  // CENTER
-  destination[X_AXIS] = 0.0f;
-  destination[Y_AXIS] = 0.0f;
-  destination[Z_AXIS] = 10.0f;
-  prepare_move();
-  st_synchronize();
-
-  da_pause = 5; do { idle(); delay(100); } while(--da_pause);
-
-  center_altitude = get_probed_Z_avg();
-
-  SERIAL_ECHOLN( "NEW R probed points:" );
-  SERIAL_ECHO  ( "  T1: " );
-  SERIAL_ECHOLN( tower1_altitude );
-  SERIAL_ECHO  ( "  T2: " );
-  SERIAL_ECHOLN( tower2_altitude );
-  SERIAL_ECHO  ( "  T3: " );
-  SERIAL_ECHOLN( tower3_altitude );
-  SERIAL_ECHO  ( "   C: " );
-  SERIAL_ECHOLN( center_altitude );
-
-  mean_ref_plan_altitude = ( tower1_altitude + tower2_altitude + tower3_altitude ) / 3.0;
-  diff_center_altitude = center_altitude - mean_ref_plan_altitude;
-
-  SERIAL_ECHO( "NEW Mean based difference: " );
-  SERIAL_ECHOLN( diff_center_altitude );
-
-#endif
+      SERIAL_ECHOPGM( "With delta radius: " );
+      SERIAL_ECHOLN ( delta_radius );
+    }
+  #endif
 
   gcode_G28();
 
   startup_auto_calibration = false;
 }
+
+#if ENABLED(Z_MIN_MAGIC)
+// Pre-declaration
+inline void gcode_D600();
+#endif
 
 #endif // DELTA_EXTRA End
 
@@ -8373,6 +8568,11 @@ void process_next_command() {
         case 410:
           gcode_D410();
           break;
+        #if ENABLED(Z_MIN_MAGIC)
+          case 600:
+            gcode_D600();
+            break;
+        #endif
         case 851:
           gcode_D851();
           break;
@@ -8467,26 +8667,86 @@ void clamp_to_software_endstops(float target[3]) {
     delta_diagonal_rod_2_tower_3 = sq(diagonal_rod + delta_diagonal_rod_trim_tower_3);
 
     #if ENABLED( DELTA_EXTRA )
-      #if ENABLED(TRI_SHAPE_PROBING)
-    #error
-        probe_point_XY_x = (delta_tower1_x + delta_tower2_x ) / 2.0;
-        probe_point_XY_y = (delta_tower1_y + delta_tower2_y ) / 2.0;
+      int i=0;
+      // Outer
+      probe_plan[i][0] = delta_tower1_x;
+      probe_plan[i][1] = delta_tower1_y;
+      i++;
 
-        probe_point_YZ_x = (delta_tower2_x + delta_tower3_x ) / 2.0;
-        probe_point_YZ_y = (delta_tower2_y + delta_tower3_y ) / 2.0;
+      probe_plan[i][0] = -COS_60 * radius;
+      probe_plan[i][1] = -SIN_60 * radius;
+      i++;
 
-        probe_point_ZX_x = (delta_tower3_x + delta_tower1_x ) / 2.0;
-        probe_point_ZX_y = (delta_tower3_y + delta_tower1_y ) / 2.0;
-      #else
-        probe_point_XY_x =  0.0;
-        probe_point_XY_y =  -1.0 * radius;
+      probe_plan[i][0] = 0.0;
+      probe_plan[i][1] = -1.0 * radius;
+      i++;
 
-        probe_point_YZ_x =  SIN_60 * radius;
-        probe_point_YZ_y =  COS_60 * radius;
+      probe_plan[i][0] = COS_60 * radius;
+      probe_plan[i][1] = -SIN_60 * radius;
+      i++;
 
-        probe_point_ZX_x = -SIN_60 * radius;
-        probe_point_ZX_y =  COS_60 * radius;
-      #endif
+      probe_plan[i][0] = delta_tower2_x;
+      probe_plan[i][1] = delta_tower2_y;
+      i++;
+
+      probe_plan[i][0] = radius;
+      probe_plan[i][1] = 0.0;
+      i++;
+
+      probe_plan[i][0] = SIN_60 * radius;
+      probe_plan[i][1] = COS_60 * radius;
+      i++;
+
+      probe_plan[i][0] = COS_60 * radius;
+      probe_plan[i][1] = SIN_60 * radius;
+      i++;
+
+      probe_plan[i][0] = delta_tower3_x;
+      probe_plan[i][1] = delta_tower3_y;
+      i++;
+
+      probe_plan[i][0] = -COS_60 * radius;
+      probe_plan[i][1] = SIN_60 * radius;
+      i++;
+
+      probe_plan[i][0] = -SIN_60 * radius;
+      probe_plan[i][1] = COS_60 * radius;
+      i++;
+
+      probe_plan[i][0] = -radius;
+      probe_plan[i][1] = 0.0;
+      i++;
+
+      // Inner
+      probe_plan[i][0] = -SIN_60 * radius / 2.0;
+      probe_plan[i][1] = -COS_60 * radius / 2.0;
+      i++;
+
+      probe_plan[i][0] = 0.0;
+      probe_plan[i][1] = -radius / 2.0;
+      i++;
+
+      probe_plan[i][0] = SIN_60 * radius / 2.0;
+      probe_plan[i][1] = -COS_60 * radius / 2.0;
+      i++;
+
+      probe_plan[i][0] = SIN_60 * radius / 2.0;
+      probe_plan[i][1] = COS_60 * radius / 2.0;
+      i++;
+
+      probe_plan[i][0] = 0.0;
+      probe_plan[i][1] = radius / 2.0;
+      i++;
+
+      probe_plan[i][0] = -SIN_60 * radius / 2.0;
+      probe_plan[i][1] = COS_60 * radius / 2.0;
+      i++;
+
+      // Center
+      probe_plan[i][0] = 0.0;
+      probe_plan[i][1] = 0.0;
+      i++;
+
     #endif
   }
 
@@ -8516,6 +8776,15 @@ void clamp_to_software_endstops(float target[3]) {
   }
 
   #if ENABLED(AUTO_BED_LEVELING_FEATURE)
+
+    inline float triangle_get_point_offset( const float x, const float y, const short t ) {
+      // z = - (d + b.y + a.x) / c ;
+      return - ( 
+        probed_tri_postcompute_d[t] +
+        probed_tri_postcompute_b[t] * y +
+        probed_tri_postcompute_a[t] * x
+      ) / probed_tri_postcompute_c[t];
+    }
 
     // Adjust print surface height by linear interpolation over the bed_level array.
     void adjust_delta(float cartesian[3]) {
@@ -8561,14 +8830,10 @@ void clamp_to_software_endstops(float target[3]) {
         if ( cartesian[Z_AXIS] > z_smooth_tri_leveling_height ) return;
 
         // Find the index tri for z correction
-        int idx = triangle_index( cartesian[X_AXIS], cartesian[Y_AXIS] );
+        short idx = triangle_index( cartesian[X_AXIS], cartesian[Y_AXIS] );
 
-        // -(pp.x * m.x + pp.y * m.y + pp.d) / pp.z;
-        float offset = - (
-            probed_tri_postcompute_nx[ idx ] * cartesian[X_AXIS]
-          + probed_tri_postcompute_ny[ idx ] * cartesian[Y_AXIS]
-          + probed_tri_postcompute_d [ idx ]
-        ) / probed_tri_postcompute_nz[ idx ] ;
+        // Get offset from tri equations
+        float offset = triangle_get_point_offset( cartesian[X_AXIS], cartesian[Y_AXIS], idx );
 
         // Adjust final-offset againt Z altitude
         // to reduce it after 0.6mm
@@ -8581,6 +8846,11 @@ void clamp_to_software_endstops(float target[3]) {
         delta[X_AXIS] += zprobe_zoffset;
         delta[Y_AXIS] += zprobe_zoffset;
         delta[Z_AXIS] += zprobe_zoffset;
+
+        // Bed support smoothness
+        delta[X_AXIS] += 0.05;
+        delta[Y_AXIS] += 0.05;
+        delta[Z_AXIS] += 0.05;
 
       #endif // End DELTA_EXTRA
     }
@@ -9223,6 +9493,7 @@ void disable_all_steppers() {
         && axis_homed[Y_AXIS]
         && axis_homed[Z_AXIS]
         ) {
+          SERIAL_ECHOLNPGM("Pause : Summoned by user bouton press");
           print_pause_summoned = true;
           enqueue_and_echo_commands_P(PSTR(SUMMON_PRINT_PAUSE_SCRIPT));
       }
@@ -9291,6 +9562,10 @@ void disable_all_steppers() {
   }
 #endif
 
+#if ENABLED( Z_MIN_MAGIC )
+  millis_t last_debug_z_magic_timing = 0UL;
+#endif
+
 /**
  * Standard idle routine keeps the machine alive
  */
@@ -9299,6 +9574,14 @@ void idle(
     bool no_stepper_sleep/*=false*/
   #endif
 ) {
+
+/*
+  if (z_magic_derivative_bias < -5.0) {
+    SERIAL_ECHO("z_magic_d: ");
+    SERIAL_ECHOLN(z_magic_derivative_bias);
+  }
+*/
+
   manage_heater();
   #if ENABLED(SUMMON_PRINT_PAUSE)
   manage_pause_summoner();
@@ -9308,6 +9591,9 @@ void idle(
   #endif
   #if ENABLED(ONE_LED)
   manage_one_led();
+  #endif
+  #if ENABLED(DELTA_EXTRA) && ENABLED(Z_MIN_MAGIC)
+  manage_tap_tap();
   #endif
   manage_inactivity(
     #if ENABLED(FILAMENTCHANGEENABLE)
@@ -9339,6 +9625,24 @@ void idle(
   #if ENABLED( WIFI_PRINT )
     manage_second_serial_status();
   #endif
+
+  #if ENABLED( Z_MIN_MAGIC )
+    if (DEBUGGING(LEVELING)) {
+      millis_t now = millis();
+      if (ELAPSED(now, last_debug_z_magic_timing)) {
+        SERIAL_ECHOPGM("Z Magic (tstp / pressure / bias / tap): ");
+        SERIAL_ECHO( millis() );
+        SERIAL_ECHOPGM(" / ");
+        SERIAL_ECHO( z_magic_value );
+        SERIAL_ECHOPGM(" / ");
+        SERIAL_ECHO( z_magic_derivative_bias );
+        SERIAL_ECHOPGM(" / ");
+        SERIAL_ECHO( z_magic_hit_count );
+        SERIAL_ECHOLNPGM("");
+        last_debug_z_magic_timing = now + 250UL; // 2times a second
+      }
+    }
+  #endif
 }
 
 /**
@@ -9354,6 +9658,7 @@ void idle(
  *  - Check if an idle but hot extruder needs filament extruded (EXTRUDER_RUNOUT_PREVENT)
  */
 void manage_inactivity(bool ignore_stepper_queue/*=false*/) {
+  millis_t ms = millis();
 
   #if HAS_FILRUNOUT
     if (
@@ -9367,13 +9672,19 @@ void manage_inactivity(bool ignore_stepper_queue/*=false*/) {
       && axis_homed[Y_AXIS]
       && axis_homed[Z_AXIS]
       ) {
-      handle_filament_runout();
+      if(ELAPSED(ms, frs_debounce_time)) {
+        if (frs_debounce_time == 0UL) {
+          frs_debounce_time = ms + FRS_DEBOUNCE_DELAY;
+        } else {
+          handle_filament_runout();
+        }
+      }
+    } else {
+      frs_debounce_time = 0UL;
     }
   #endif
 
   if (commands_in_queue < BUFSIZE) get_available_commands();
-
-  millis_t ms = millis();
 
   if (max_inactive_time && ELAPSED(ms, previous_cmd_ms + max_inactive_time)) kill(PSTR(MSG_KILLED));
 
@@ -9564,23 +9875,28 @@ void kill(const char* lcd_msg) {
       abort_sd_printing();
       card.initsd();
       if ( card.cardOK ) {
-        card.openLogFile( "errmsg.d" );
+        char logfilename[30];
+        sprintf_P(logfilename, PSTR("errmsg.d"));
+        // First, delete previous if exists
+        card.removeFile( logfilename );
+        // Then, create it
+        card.openLogFile( logfilename );
         if ( card.saving ) {
           if ( card.writePGM( lcd_msg ) ) {
-            SERIAL_ECHOLN( PSTR("errmsg.d : file written, for more information.") );
+            SERIAL_ECHOLNPGM( "errmsg.d : file written, for more information." );
           }
           else {
-            SERIAL_ECHOLN( PSTR("errmsg.d : can't write file content") );
+            SERIAL_ECHOLNPGM( "errmsg.d : can't write file content" );
           }
           card.closefile();
           card.release();
         }
         else {
-          SERIAL_ECHOLN( PSTR("errmsg.d : can't create file") );
+          SERIAL_ECHOLNPGM( "errmsg.d : can't create file" );
         }
       }
       else {
-        SERIAL_ECHOLN( PSTR("errmsg.d : can't init sd card") );
+        SERIAL_ECHOLNPGM( "errmsg.d : can't init sd card" );
       }
     #endif
     gcode_G28();
@@ -9618,9 +9934,9 @@ void kill(const char* lcd_msg) {
 }
 
 #if ENABLED(FILAMENT_RUNOUT_SENSOR)
-
   void handle_filament_runout() {
     if (!filament_ran_out) {
+      SERIAL_ECHOLNPGM("Pause : No more filament detected");
       filament_ran_out = true;
       enqueue_and_echo_commands_P(PSTR(FILAMENT_RUNOUT_SCRIPT));
       st_synchronize();

@@ -113,6 +113,10 @@ static volatile char endstop_hit_bits = 0; // use X_MIN, Y_MIN, Z_MIN and Z_MIN_
   bool abort_on_endstop_hit = false;
 #endif
 
+#if ENABLED(EMERGENCY_STOP)
+  bool trigger_emergency_stop = false;
+#endif
+
 #if HAS_MOTOR_CURRENT_PWM
   #ifndef PWM_MOTOR_CURRENT
     #define PWM_MOTOR_CURRENT DEFAULT_PWM_MOTOR_CURRENT
@@ -485,14 +489,51 @@ inline void update_endstops() {
           #endif // !Z_DUAL_ENDSTOPS
         #endif
 
+        // Check if pause is triggered during z probe
+        #if ENABLED(HAS_Z_MIN_PROBE)
+          #if ENABLED(EMERGENCY_STOP)
+            #if ENABLED(DELTA) && ENABLED(ONE_BUTTON) // Delta
+              if ( (READ(ONE_BUTTON_PIN) ^ ONE_BUTTON_INVERTING) ) {
+                SET_BIT(current_endstop_bits, Z_MIN_PROBE, 1 ); // Emulate endstops hit (here: Z_MIN)
+                trigger_emergency_stop = true;
+              }
+            #elif ENABLED(SUMMON_PRINT_PAUSE) // E200 Neva-like (with pause button)
+              if ( (READ(SUMMON_PRINT_PAUSE_PIN) ^ SUMMON_PRINT_PAUSE_INVERTING) ) {
+                SET_BIT(current_endstop_bits, Z_MIN_PROBE, 1 ); // Emulate endstops hit (here: Z_MIN)
+                trigger_emergency_stop = true;
+              }
+            #endif
+
+            // Assumption: this piece of code is used to stop the move in checking bit in Z_MIN_PROBE flag.
+            if (TEST_ENDSTOP(_ENDSTOP(Z, MIN_PROBE)) && current_block->steps[_AXIS(Z)] > 0) {
+              _SET_TRIGSTEPS(Z);
+              _ENDSTOP_HIT(Z);
+              step_events_completed = current_block->step_event_count;
+            }
+
+            if (TEST_ENDSTOP(Z_MIN_PROBE)) SBI(endstop_hit_bits, Z_MIN_PROBE);
+
+            // FIXME: Quick fix to exit earlier
+            //        If emergency stop is triggered
+            // TODO:  See if this code can be avoided with below Z_MIN_MAGIC possible override
+            //        of emergency occurrences
+            if (trigger_emergency_stop) {
+              old_endstop_bits = current_endstop_bits;
+              return;
+            }
+          #endif
+        #endif
+
         #if ENABLED(Z_MIN_PROBE_ENDSTOP) && DISABLED(Z_MIN_PROBE_USES_Z_MIN_ENDSTOP_PIN) && ENABLED(HAS_Z_MIN_PROBE)
           #if ENABLED( Z_MIN_MAGIC )
-              if ( z_probe_is_active && can_measure_z_magic ) {
-                int z_sensor_i = analogRead( Z_MIN_PROBE_PIN );
+              if ( z_probe_is_active /*&& can_measure_z_magic*/ ) {
+                //int z_sensor_i = analogRead( Z_MIN_PROBE_PIN );
+                int z_sensor_i = z_magic_value;
                 float z_sensor_f = float( z_sensor_i );
                 float derivative_bias = ( z_sensor_f - last_measures_avg ) / 2.0;
 
-                if ( derivative_bias > -3.0 ) {
+                /*if ( derivative_bias > -2.0 ) {*/
+                if ( z_magic_derivative_bias > -5.0 ) {
                   // We do not hit anything
                   SET_BIT(current_endstop_bits, Z_MIN_PROBE, 0 );
                 }
@@ -516,9 +557,9 @@ inline void update_endstops() {
                   _ENDSTOP_HIT(Z);
                   step_events_completed = current_block->step_event_count;
                 }
-                
+
                 if (TEST_ENDSTOP(Z_MIN_PROBE)) SBI(endstop_hit_bits, Z_MIN_PROBE);
-               
+
               } // END z_probe_is_active
           #else
             if (z_probe_is_active) {
