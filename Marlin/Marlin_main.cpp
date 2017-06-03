@@ -1095,7 +1095,6 @@ inline void get_serial_commands() {
    * Loop while serial characters are incoming and the queue is not full
    */
    #if ENABLED(WIFI_PRINT)
-     // TODO STEF : the loop has changed a lot, see below non wifi print case
      while (commands_in_queue < BUFSIZE && (MYSERIAL.available() > 0 || SECOND_SERIAL.available() > 0 )) {
 
      char serial_char;
@@ -1129,6 +1128,14 @@ inline void get_serial_commands() {
       char* npos = (*command == 'N') ? command : NULL; // Require the N parameter to start the line
       char* apos = strchr(command, '*');
 
+      #if ENABLED(WIFI_PRINT)
+        if ( strncmp( command, "REDY:", 4 ) == 0 ) {
+          // Do stuff with that ?
+          lcd_setstatus( command + 5 );
+          continue;
+        }
+      #endif // END WIFI_PRINT
+
       if (npos) {
 
         bool M110 = strstr_P(command, PSTR("M110")) != NULL;
@@ -1142,6 +1149,10 @@ inline void get_serial_commands() {
 
         if (gcode_N != gcode_LastN + 1 && !M110) {
           gcode_line_error(PSTR(MSG_ERR_LINE_NO));
+
+          #if ENABLED( WIFI_PRINT )
+            SECOND_SERIAL.println( 'K' );
+          #endif
           return;
         }
 
@@ -1151,12 +1162,19 @@ inline void get_serial_commands() {
 
           if (strtol(apos + 1, NULL, 10) != checksum) {
             gcode_line_error(PSTR(MSG_ERR_CHECKSUM_MISMATCH));
+
+            #if ENABLED( WIFI_PRINT )
+              SECOND_SERIAL.println( 'K' );
+            #endif
             return;
           }
           // if no errors, continue parsing
         }
         else {
           gcode_line_error(PSTR(MSG_ERR_NO_CHECKSUM));
+          #if ENABLED( WIFI_PRINT )
+            SECOND_SERIAL.println( 'K' );
+          #endif
           return;
         }
 
@@ -1165,6 +1183,10 @@ inline void get_serial_commands() {
       }
       else if (apos) { // No '*' without 'N'
         gcode_line_error(PSTR(MSG_ERR_NO_LINENUMBER_WITH_CHECKSUM), false);
+
+        #if ENABLED( WIFI_PRINT )
+          SECOND_SERIAL.println( 'K' );
+        #endif
         return;
       }
 
@@ -1203,17 +1225,31 @@ inline void get_serial_commands() {
 
       // Add the command to the queue
       _enqueuecommand(serial_line_buffer, true);
+      #if ENABLED( WIFI_PRINT )
+        SECOND_SERIAL.println( 'O' );
+      #endif
     }
     else if (serial_count >= MAX_CMD_SIZE - 1) {
       // Keep fetching, but ignore normal characters beyond the max length
       // The command will be injected when EOL is reached
     }
     else if (serial_char == '\\') {  // Handle escapes
+      #if ENABLED(WIFI_PRINT)
+      if (MYSERIAL.available() > 0 || SECOND_SERIAL.available() > 0) {
+        // if we have one more character, copy it over
+        if (SECOND_SERIAL.available() > 0) {
+          serial_char = SECOND_SERIAL.read();
+        }
+        else {
+          serial_char = MYSERIAL.read();
+        }
+      #else
       if (MYSERIAL.available() > 0) {
         // if we have one more character, copy it over
         serial_char = MYSERIAL.read();
         if (!serial_comment_mode) serial_line_buffer[serial_count++] = serial_char;
       }
+      #endif
       // otherwise do nothing
     }
     else { // it's not a newline, carriage return or escape char
@@ -1255,8 +1291,23 @@ inline void get_serial_commands() {
       card_eof = card.eof();
       if (card_eof || n == -1
           || sd_char == '\n' || sd_char == '\r'
-          || ((sd_char == '#' || sd_char == ':') && !sd_comment_mode)
+          || ((sd_char == '#'
+           #if DISABLED(WIFI_PRINT)
+          || sd_char == ':')
+          #endif
+          && !sd_comment_mode)
       ) {
+        if (sd_char == '#') stop_buffering = true;
+
+        sd_comment_mode = false; //for new command
+
+        if (sd_count) {
+          command_queue[cmd_queue_index_w][sd_count] = '\0'; //terminate string
+          sd_count = 0; //clear buffer
+
+          _commit_command(false);
+        }
+        
         if (card_eof) {
           SERIAL_PROTOCOLLNPGM(MSG_FILE_PRINTED);
           card.printingHasFinished();
