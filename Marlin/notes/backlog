@@ -12,55 +12,8 @@ diff Marlin/Marlin_main.cpp ../DiscoEasy200/Marlin_main.cpp
 >       inline void abort_sd_printing();
 >     #endif
 >   #endif
-XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX
-1086a1344
->           #if DISABLED(ONE_BUTTON)
-1087a1346
->           #endif
-1089,1091d1347
-<         if (sd_char == '#') stop_buffering = true;
-<
-<         sd_comment_mode = false; //for new command
-1094,1098d1349
-<
-<         command_queue[cmd_queue_index_w][sd_count] = '\0'; //terminate string
-<         sd_count = 0; //clear buffer
-<
-<         _commit_command(false);
-1537c1788,1818
-<   static void run_z_probe() {
----
->   // Check if pause is triggered during G29 (manuel bed leveling) and D851 (custom calibration)
->   #if ENABLED(EMERGENCY_STOP)
->     void handle_emergency_stop(){
->       if ( trigger_emergency_stop ) {
->         // Abort current operations:
->         // - Move the nozzle up
->         #if ENABLED(EMERGENCY_STOP_Z_MOVE)
->           // Setting the current_position seems useless as the move is stopped by resetting...?
->           //current_position[Z_AXIS] += 5;
->           feedrate = homing_feedrate[Z_AXIS];
->           #if ENABLED(DELTA)
->             calculate_delta(current_position);
->             plan_buffer_line(delta[X_AXIS], delta[Y_AXIS], delta[Z_AXIS], current_position[E_AXIS], feedrate / 60, active_extruder);
->           #else
->             line_to_current_position();
->           #endif
->         #endif
->         // - Reset the board
->         while( true ) {
->           #if ENABLED(ONE_LED)
->             one_led_on();
->             delay(150);
->             one_led_off();
->           #endif
->           delay(150);
->         }
->       }
->     }
->   #endif
->
->   static void run_z_probe(bool fast=false) {
+XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX
+XXXXXXXXXXXXXXXXXXx in run_z_probe() XXXXXXXXXXXXXXXXXXXXXXXXX
 1555,1556c1836,1846
 <       feedrate = homing_feedrate[Z_AXIS] / 4;
 <       destination[Z_AXIS] = -10;
@@ -699,10 +652,6 @@ XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX
 >     inline void set_notify_warning();
 >   #endif
 >
-6004a6900,6902
->    *  P[pin]      - Pin to wait for, if not specified use lcd button
->    *              - Pin can be A, B or C respectively for X, Y and Z endstops.
->    *  S[0|1]      - If Pin, state to wait for, if not specified use LOW
 6011,6015c6909
 <     if (degHotend(active_extruder) < extrude_min_temp) {
 <       SERIAL_ERROR_START;
@@ -711,6 +660,8 @@ XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX
 <     }
 ---
 >     SERIAL_ECHOLNPGM( "Pause for filament change" );
+XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX
+XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX
 6017,6019c6911,6915
 <     float lastpos[NUM_AXIS];
 <     #if ENABLED(DELTA)
@@ -989,48 +940,8 @@ XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX
 >     // Restore previous feedrate
 >     feedrate = previous_feedrate;
 >
-6186a7265,7305
-> /*****************************************************************************
->  * DAGOMA.FR Specific
->  *****************************************************************************/
-> #if ENABLED(WIFI_PRINT)
-> inline void gcode_D700() {
->   SECOND_SERIAL.print("SSID:");
->   SECOND_SERIAL.println(current_command_args);
-> }
->
-> inline void gcode_D701() {
->   SECOND_SERIAL.print("PSWD:");
->   SECOND_SERIAL.println(current_command_args);
-> }
->
-> inline void gcode_D702() {
->   SECOND_SERIAL.println("REDY");
-> }
->
-> inline void gcode_D710() {
->   SECOND_SERIAL.print("PNAM:");
->   SECOND_SERIAL.println(current_command_args);
-> }
->
-> inline void gcode_D711() {
->   SECOND_SERIAL.print("APIU:");
->   SECOND_SERIAL.println(current_command_args);
-> }
->
-> inline void gcode_D712() {
->   SECOND_SERIAL.print("APIK:");
->   SECOND_SERIAL.println(current_command_args);
-> }
->
-> inline void gcode_D720() {
->   SERIAL_ECHO_START;
->   SERIAL_ECHOPGM("D:");
->   SERIAL_ECHOLN(current_command_args);
-> }
->
-> #endif
->
+XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXx
+XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXx
 6428a7548,7923
 > #if ENABLED( DELTA_EXTRA )
 >
@@ -1408,54 +1319,6 @@ XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX
 >
 > #endif // DELTA_EXTRA End
 >
-7046a8542,8588
->     case 'D': switch (codenum) {
->       // DAGOMA.FR Specific
->       #if ENABLED(WIFI_PRINT)
->         case 700:
->           gcode_D700(); // SSID
->           break;
->         case 701:
->           gcode_D701(); // PSWD
->           break;
->         case 702:
->           gcode_D702(); // REDY? get ip
->           break;
->         case 710:
->           gcode_D710(); // Tech name
->           break;
->         case 711:
->           gcode_D711(); // API Url
->           break;
->         case 712:
->           gcode_D712(); // API Key
->           break;
->         case 720:
->           gcode_D720(); // ECHO
->           break;
->         #endif
->       #if ENABLED( DELTA_EXTRA )
->         case 410:
->           gcode_D410();
->           break;
->         #if ENABLED(Z_MIN_MAGIC)
->           case 600:
->             gcode_D600();
->             break;
->         #endif
->         case 851:
->           gcode_D851();
->           break;
->         case 888:
->           gcode_D888();
->           break;
->         case 999:
->           gcode_D999();
->           break;
->       #endif
->       // DAGOMA.FR End
->       }
->     break;
 7125a8668,8750
 >
 >     #if ENABLED( DELTA_EXTRA )

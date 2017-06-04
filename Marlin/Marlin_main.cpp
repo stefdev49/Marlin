@@ -1329,16 +1329,8 @@ inline void get_serial_commands() {
           SERIAL_ERROR_START;
           SERIAL_ECHOLNPGM(MSG_SD_ERR_READ);
         }
-        if (sd_char == '#') stop_buffering = true;
-
-        sd_comment_mode = false; // for new command
 
         if (!sd_count) continue; // skip empty lines (and comment lines)
-
-        command_queue[cmd_queue_index_w][sd_count] = '\0'; // terminate string
-        sd_count = 0; // clear sd line buffer
-
-        _commit_command(false);
       }
       else if (sd_count >= MAX_CMD_SIZE - 1) {
         /**
@@ -8820,11 +8812,15 @@ inline void gcode_M503() {
    *  X[position] - Move to this X position, with Y
    *  Y[position] - Move to this Y position, with X
    *  L[distance] - Retract distance for removal (manual reload)
-   *
+   *  P[pin]      - Pin to wait for, if not specified use lcd button
+   *              - Pin can be A, B or C respectively for X, Y and Z endstops.
+   *  S[0|1]      - If Pin, state to wait for, if not specified use LOW
    *  Default values are used for omitted arguments.
    *
    */
   inline void gcode_M600() {
+
+    SERIAL_ECHOLNPGM( "Pause for filament change" );
 
     if (!DEBUGGING(DRYRUN) && thermalManager.tooColdToExtrude(active_extruder)) {
       SERIAL_ERROR_START;
@@ -9099,6 +9095,46 @@ inline void gcode_M503() {
   }
 
 #endif // DUAL_NOZZLE_DUPLICATION_MODE
+/*****************************************************************************
+ * DAGOMA.FR Specific
+ *****************************************************************************/
+#if ENABLED(WIFI_PRINT)
+inline void gcode_D700() {
+  SECOND_SERIAL.print("SSID:");
+  SECOND_SERIAL.println(current_command_args);
+}
+
+inline void gcode_D701() {
+  SECOND_SERIAL.print("PSWD:");
+  SECOND_SERIAL.println(current_command_args);
+}
+
+inline void gcode_D702() {
+  SECOND_SERIAL.println("REDY");
+}
+
+inline void gcode_D710() {
+  SECOND_SERIAL.print("PNAM:");
+  SECOND_SERIAL.println(current_command_args);
+}
+
+inline void gcode_D711() {
+  SECOND_SERIAL.print("APIU:");
+  SECOND_SERIAL.println(current_command_args);
+}
+
+inline void gcode_D712() {
+  SECOND_SERIAL.print("APIK:");
+  SECOND_SERIAL.println(current_command_args);
+}
+
+inline void gcode_D720() {
+  SERIAL_ECHO_START;
+  SERIAL_ECHOPGM("D:");
+  SERIAL_ECHOLN(current_command_args);
+}
+
+#endif
 
 #if ENABLED(LIN_ADVANCE)
   /**
@@ -10652,6 +10688,53 @@ void process_next_command() {
       gcode_T(codenum);
       break;
 
+    case 'D': switch (codenum) {
+      // DAGOMA.FR Specific
+      #if ENABLED(WIFI_PRINT)
+        case 700:
+          gcode_D700(); // SSID
+          break;
+        case 701:
+          gcode_D701(); // PSWD
+          break;
+        case 702:
+          gcode_D702(); // REDY? get ip
+          break;
+        case 710:
+          gcode_D710(); // Tech name
+          break;
+        case 711:
+          gcode_D711(); // API Url
+          break;
+        case 712:
+          gcode_D712(); // API Key
+          break;
+        case 720:
+          gcode_D720(); // ECHO
+          break;
+        #endif
+      #if ENABLED( DELTA_EXTRA )
+        case 410:
+          gcode_D410();
+          break;
+        #if ENABLED(Z_MIN_MAGIC)
+          case 600:
+            gcode_D600();
+            break;
+        #endif
+        case 851:
+          gcode_D851();
+          break;
+        case 888:
+          gcode_D888();
+          break;
+        case 999:
+          gcode_D999();
+          break;
+      #endif
+      // DAGOMA.FR End
+      }
+      break;
     default: code_is_good = false;
   }
 
