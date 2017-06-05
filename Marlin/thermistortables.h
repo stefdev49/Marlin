@@ -101,6 +101,9 @@
 #if ANY_THERMISTOR_IS(12) // 100k 0603 SMD Vishay NTCS0603E3104FXT (4.7k pullup) (calibrated for Makibox hot bed)
   #include "thermistortable_12.h"
 #endif
+#if ANY_THERMISTOR_IS(17) // 100K thermistor - Alternative ATC Semitec 104GT-2 (4.7k pullup) Dagoma.Fr - MKS_Base - version (measured/tested/approved)
+  #include "thermistortable_17.h"
+#endif
 #if ANY_THERMISTOR_IS(70) // bqh2 stock thermistor
   #include "thermistortable_70.h"
 #endif
