@@ -512,6 +512,11 @@ static millis_t stepper_inactive_time = (DEFAULT_STEPPER_DEACTIVE_TIME) * 1000UL
   #define BUZZ(d,f) NOOP
 #endif
 
+
+#if ENABLED(IS_MONO_FAN) || ENABLED(PRINTER_HEAD_EASY)
+static millis_t next_fan_auto_regulation_check = 0;
+#endif
+
 static uint8_t target_extruder;
 
 #if HAS_BED_PROBE
@@ -13117,6 +13122,38 @@ void manage_inactivity(bool ignore_stepper_queue/*=false*/) {
     }
   #endif
 
+  #if ENABLED(IS_MONO_FAN) || ENABLED(PRINTER_HEAD_EASY)
+    if (ELAPSED(ms, next_fan_auto_regulation_check)) {
+      float max_temp = 0.0;
+      for (int8_t cur_extruder = 0; cur_extruder < EXTRUDERS; ++cur_extruder)
+        max_temp = max(max_temp, degHotend(cur_extruder));
+
+      #if ENABLED(IS_MONO_FAN)
+        short fs = 0;
+        if (max_temp < MONO_FAN_MIN_TEMP) {
+          fs = 0;
+        }
+        else {
+          fs = fanSpeeds[0];
+          NOLESS(fs, MONO_FAN_MIN_PWM);
+        }
+
+        fanSpeeds[0] = fs;
+      #endif
+
+      #if ENABLED(PRINTER_HEAD_EASY)
+        if (max_temp < PRINTER_HEAD_EASY_CONSTANT_FAN_MIN_TEMP) {
+          analogWrite(PRINTER_HEAD_EASY_CONSTANT_FAN_PIN, 0);
+        }
+        else {
+          analogWrite(PRINTER_HEAD_EASY_CONSTANT_FAN_PIN, 255);
+        }
+      #endif
+
+      next_fan_auto_regulation_check = ms + 2500UL;
+    }
+  #endif
+
   #if ENABLED(USE_CONTROLLER_FAN)
     controllerFan(); // Check if fan should be turned on to cool stepper drivers down
   #endif
@@ -13550,6 +13587,10 @@ void setup() {
       pe_deactivate_magnet(0);
       pe_deactivate_magnet(1);
     #endif
+  #endif
+  #if ENABLED(PRINTER_HEAD_EASY)
+    SET_OUTPUT(PRINTER_HEAD_EASY_CONSTANT_FAN_PIN);
+    WRITE(PRINTER_HEAD_EASY_CONSTANT_FAN_PIN, LOW);
   #endif
 }
 
