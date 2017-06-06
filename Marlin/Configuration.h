@@ -413,6 +413,8 @@
 #endif // PIDTEMPBED
 
 // @section extruder
+#define PRINTER_HEAD_EASY_CONSTANT_FAN_MIN_TEMP 50
+#define PRINTER_HEAD_EASY
 
 // This option prevents extrusion if the temperature is below EXTRUDE_MINTEMP.
 // It also enables the M302 command to set the minimum extrusion temperature
