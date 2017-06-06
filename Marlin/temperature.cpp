@@ -190,7 +190,7 @@ int16_t Temperature::minttemp_raw[HOTENDS] = ARRAY_BY_HOTENDS(HEATER_0_RAW_LO_TE
   int16_t Temperature::meas_shift_index;  // Index of a delayed sample in buffer
 #endif
 
-#if HAS_AUTO_FAN
+#if HAS_AUTO_FAN || ENABLED(IS_MONO_FAN) || ENABLED(PRINTER_HEAD_EASY)
   millis_t Temperature::next_auto_fan_check_ms = 0;
 #endif
 
@@ -227,7 +227,7 @@ uint8_t Temperature::soft_pwm[HOTENDS];
     float workKp = 0, workKi = 0, workKd = 0;
     float max = 0, min = 10000;
 
-    #if HAS_AUTO_FAN
+    #if HAS_AUTO_FAN || ENABLED(IS_MONO_FAN) || ENABLED(PRINTER_HEAD_EASY)
       next_auto_fan_check_ms = temp_ms + 2500UL;
     #endif
 
@@ -286,9 +286,19 @@ uint8_t Temperature::soft_pwm[HOTENDS];
         NOLESS(max, input);
         NOMORE(min, input);
 
-        #if HAS_AUTO_FAN
+        #if HAS_AUTO_FAN || ENABLED(IS_MONO_FAN) || ENABLED(PRINTER_HEAD_EASY)
           if (ELAPSED(ms, next_auto_fan_check_ms)) {
-            checkExtruderAutoFans();
+            #if HAS_AUTO_FAN
+              checkExtruderAutoFans();
+            #endif
+            #if ENABLED(IS_MONO_FAN)
+              digitalWrite(FAN_PIN, MONO_FAN_MIN_PWM);
+              analogWrite(FAN_PIN, MONO_FAN_MIN_PWM);
+            #endif
+            #if ENABLED(PRINTER_HEAD_EASY)
+              digitalWrite(PRINTER_HEAD_EASY_CONSTANT_FAN_PIN, 255);
+              analogWrite(PRINTER_HEAD_EASY_CONSTANT_FAN_PIN, 255);
+            #endif
             next_auto_fan_check_ms = ms + 2500UL;
           }
         #endif
