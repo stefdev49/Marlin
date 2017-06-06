@@ -13126,7 +13126,7 @@ void manage_inactivity(bool ignore_stepper_queue/*=false*/) {
     if (ELAPSED(ms, next_fan_auto_regulation_check)) {
       float max_temp = 0.0;
       for (int8_t cur_extruder = 0; cur_extruder < EXTRUDERS; ++cur_extruder)
-        max_temp = max(max_temp, degHotend(cur_extruder));
+        max_temp = max(max_temp, thermalManager.degHotend(cur_extruder));
 
       #if ENABLED(IS_MONO_FAN)
         short fs = 0;
