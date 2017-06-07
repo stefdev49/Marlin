@@ -11977,6 +11977,8 @@ void manage_inactivity(bool ignore_stepper_queue/*=false*/) {
 
   #if ENABLED(IS_MONO_FAN) || ENABLED(PRINTER_HEAD_EASY)
     if (ELAPSED(ms, next_fan_auto_regulation_check)) {
+      SERIAL_PROTOCOLLNPGM("XXX STEF XXX : CHECKING FAN");
+
       float max_temp = 0.0;
       for (int8_t cur_extruder = 0; cur_extruder < EXTRUDERS; ++cur_extruder)
         max_temp = max(max_temp, thermalManager.degHotend(cur_extruder));
@@ -11996,9 +11998,11 @@ void manage_inactivity(bool ignore_stepper_queue/*=false*/) {
 
       #if ENABLED(PRINTER_HEAD_EASY)
         if (max_temp < PRINTER_HEAD_EASY_CONSTANT_FAN_MIN_TEMP) {
+          SERIAL_PROTOCOLLNPGM("XXX STEF XXX : STOPPING FAN");
           analogWrite(PRINTER_HEAD_EASY_CONSTANT_FAN_PIN, 0);
         }
         else {
+          SERIAL_PROTOCOLLNPGM("XXX STEF XXX : STARTING FAN");
           analogWrite(PRINTER_HEAD_EASY_CONSTANT_FAN_PIN, 255);
         }
       #endif
@@ -12361,6 +12365,7 @@ void setup() {
   #if ENABLED(PRINTER_HEAD_EASY)
     SET_OUTPUT(PRINTER_HEAD_EASY_CONSTANT_FAN_PIN);
     WRITE(PRINTER_HEAD_EASY_CONSTANT_FAN_PIN, LOW);
+    SERIAL_PROTOCOLLNPGM("XXX STEF XXX : HEAD FAN CONFIGURED");
   #endif
 }
 
