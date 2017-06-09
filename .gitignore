@@ -143,3 +143,9 @@ CMakeListsPrivate.txt
 
 #CLion
 cmake-build-*
+=======
+
+# ignore platformio libs and temporary files
+Marlin/lib
+.clang_complete
+.gcc-flags.json
