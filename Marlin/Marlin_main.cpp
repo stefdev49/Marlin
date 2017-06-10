@@ -12759,12 +12759,6 @@ void setup() {
   #if ENABLED(SWITCHING_NOZZLE)
     move_nozzle_servo(0);  // Initialize nozzle servo
   #endif
-
-  #if ENABLED(PRINTER_HEAD_EASY)
-    SET_OUTPUT(PRINTER_HEAD_EASY_CONSTANT_FAN_PIN);
-    WRITE(PRINTER_HEAD_EASY_CONSTANT_FAN_PIN, LOW);
-    SERIAL_PROTOCOLLNPGM("XXX STEF XXX : HEAD FAN CONFIGURED");
-  #endif
 }
 
 /**
