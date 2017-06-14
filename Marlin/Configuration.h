@@ -912,14 +912,14 @@
 #if ENABLED(AUTO_BED_LEVELING_LINEAR) || ENABLED(AUTO_BED_LEVELING_BILINEAR)
 
   // Set the number of grid points per dimension.
-  #define GRID_MAX_POINTS_X 4
+  #define GRID_MAX_POINTS_X 5
   #define GRID_MAX_POINTS_Y GRID_MAX_POINTS_X
 
   // Set the boundaries for probing (where the probe can reach).
-  #define LEFT_PROBE_BED_POSITION 18
-  #define RIGHT_PROBE_BED_POSITION 182
-  #define FRONT_PROBE_BED_POSITION 58
-  #define BACK_PROBE_BED_POSITION 148
+  #define LEFT_PROBE_BED_POSITION 25
+  #define RIGHT_PROBE_BED_POSITION 180
+  #define FRONT_PROBE_BED_POSITION 25
+  #define BACK_PROBE_BED_POSITION 180
 
   // The Z probe minimum outer margin (to validate G29 parameters).
   #define MIN_PROBE_EDGE 10
