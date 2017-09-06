@@ -873,8 +873,8 @@
  */
 //#define AUTO_BED_LEVELING_3POINT
 //#define AUTO_BED_LEVELING_LINEAR
-#define AUTO_BED_LEVELING_BILINEAR
-//#define AUTO_BED_LEVELING_UBL
+//#define AUTO_BED_LEVELING_BILINEAR
+#define AUTO_BED_LEVELING_UBL
 //#define MESH_BED_LEVELING
 
 /**
@@ -971,9 +971,9 @@
   #define UBL_PROBE_PT_1_X 39       // Probing points for 3-Point leveling of the mesh
   #define UBL_PROBE_PT_1_Y 180
   #define UBL_PROBE_PT_2_X 39
-  #define UBL_PROBE_PT_2_Y 20
+  #define UBL_PROBE_PT_2_Y 25
   #define UBL_PROBE_PT_3_X 180
-  #define UBL_PROBE_PT_3_Y 20
+  #define UBL_PROBE_PT_3_Y 25
 
   #define UBL_MESH_EDIT_MOVES_Z     // Sophisticated users prefer no movement of nozzle
   #define UBL_SAVE_ACTIVE_ON_M500   // Save the currently active mesh in the current slot on M500
