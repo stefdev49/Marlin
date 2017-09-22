@@ -149,3 +149,7 @@ cmake-build-*
 Marlin/lib
 .clang_complete
 .gcc-flags.json
+.pioenvs
+.piolibdeps
+
+.tags*
