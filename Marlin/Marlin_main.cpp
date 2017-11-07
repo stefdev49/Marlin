@@ -349,7 +349,7 @@
                            || isnan(ubl.z_values[0][0]))
 #endif
 
-#if ENABLED(NEOPIXEL_LED) 
+#if ENABLED(NEOPIXEL_LED)
   #if NEOPIXEL_TYPE == NEO_RGB || NEOPIXEL_TYPE == NEO_RBG || NEOPIXEL_TYPE == NEO_GRB || NEOPIXEL_TYPE == NEO_GBR || NEOPIXEL_TYPE == NEO_BRG || NEOPIXEL_TYPE == NEO_BGR
     #define NEO_WHITE 255, 255, 255
   #else
@@ -6437,7 +6437,11 @@ inline void gcode_M17() {
         KEEPALIVE_STATE(PAUSED_FOR_USER);
         wait_for_user = false;
         lcd_advanced_pause_show_message(ADVANCED_PAUSE_MESSAGE_OPTION);
-        while (advanced_pause_menu_response == ADVANCED_PAUSE_RESPONSE_WAIT_FOR) idle(true);
+        #if HAS_OK_BUTTON
+          while (advanced_pause_menu_response == ADVANCED_PAUSE_RESPONSE_WAIT_FOR && digitalRead(OK_BUTTON_PIN) != LOW) idle(true);
+        #else
+          while (advanced_pause_menu_response == ADVANCED_PAUSE_RESPONSE_WAIT_FOR) idle(true);
+        #endif
         KEEPALIVE_STATE(IN_HANDLER);
 
         extrude_length = ADVANCED_PAUSE_EXTRUDE_LENGTH;
@@ -13262,6 +13266,13 @@ void manage_inactivity(bool ignore_stepper_queue/*=false*/) {
     checkOverTemp();
   #endif
 
+  #if HAS_OK_BUTTON
+    if (wait_for_user && digitalRead(OK_BUTTON_PIN) == LOW) {
+      wait_for_user = false;
+      SERIAL_ECHOLN("wait_for_user cancelled");
+    }
+  #endif
+
   planner.check_axes_activity();
 }
 
@@ -13630,6 +13641,10 @@ void setup() {
   #if ENABLED(PRINTER_HEAD_EASY)
     SET_OUTPUT(PRINTER_HEAD_EASY_CONSTANT_FAN_PIN);
     WRITE(PRINTER_HEAD_EASY_CONSTANT_FAN_PIN, LOW);
+  #endif
+
+  #if HAS_OK_BUTTON
+    pinMode(OK_BUTTON_PIN, INPUT);
   #endif
 }
 
