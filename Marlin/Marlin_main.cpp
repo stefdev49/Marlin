@@ -6439,6 +6439,13 @@ inline void gcode_M17() {
         lcd_advanced_pause_show_message(ADVANCED_PAUSE_MESSAGE_OPTION);
         #if HAS_OK_BUTTON
           while (advanced_pause_menu_response == ADVANCED_PAUSE_RESPONSE_WAIT_FOR && digitalRead(OK_BUTTON_PIN) != LOW) idle(true);
+          SERIAL_ECHOLN("advanced pause completed");
+          #if HAS_BUZZER
+          if(digitalRead(OK_BUTTON_PIN) == LOW) {
+            BUZZ(100, 800);
+            BUZZ(100, 400);
+          }
+          #endif
         #else
           while (advanced_pause_menu_response == ADVANCED_PAUSE_RESPONSE_WAIT_FOR) idle(true);
         #endif
@@ -13271,6 +13278,12 @@ void manage_inactivity(bool ignore_stepper_queue/*=false*/) {
       wait_for_user = false;
       SERIAL_ECHOLN("wait_for_user cancelled");
     }
+    #if HAS_BUZZER
+      if(digitalRead(OK_BUTTON_PIN) == LOW) {
+        BUZZ(100, 800);
+        BUZZ(100, 400);
+      }
+    #endif
   #endif
 
   planner.check_axes_activity();
