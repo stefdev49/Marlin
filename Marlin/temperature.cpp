@@ -264,7 +264,7 @@ uint8_t Temperature::soft_pwm_amount[HOTENDS],
     #endif
 
     #if HAS_AUTO_FAN || ENABLED(IS_MONO_FAN) || ENABLED(PRINTER_HEAD_EASY)
-      next_auto_fan_check_ms = temp_ms + 2500UL;
+      next_auto_fan_check_ms = next_temp_ms + 2500UL;
     #endif
 
     #if ENABLED(PIDTEMP)
